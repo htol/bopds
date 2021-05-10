@@ -1,10 +1,12 @@
 package app
 
 import (
-	"fmt"
-	"os"
 	"flag"
+	"fmt"
 	"net/http"
+	"os"
+
+	"github.com/htol/bopds/scanner"
 )
 
 func CLI(args []string) int {
@@ -41,6 +43,9 @@ func (app *appEnv) fromArgs(args []string) error {
 }
 
 func (app *appEnv) run() error {
-
+    err := scanner.ScanLibrary(app.libraryPath)
+    if err != nil {
+        return err
+    }
     return nil
 }
