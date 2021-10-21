@@ -1,10 +1,14 @@
 package scanner
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/net/html/charset"
 )
@@ -50,28 +54,53 @@ func ScanLibrary(basedir string) error {
 	// fmt.Println(files)
 
 	for idx, file := range files {
-        fmt.Printf("Working on file: %d %s\n", idx, file)
-		err = readBook(file)
-		if err != nil {
-			return err
+		fmt.Printf("Working on file: %d %s\n", idx, file)
+		if strings.HasSuffix(file, ".zip") {
+			log.Println("archive found")
+			arch, err := zip.OpenReader(file)
+			if err != nil {
+				log.Fatalf("Failed to open: %s", err)
+			}
+			defer arch.Close()
+
+			for _, entry := range arch.File {
+				log.Printf("entry: %+v", entry.Name)
+				content, err := entry.Open()
+				if err != nil {
+					log.Printf("Failed to read %s in zip: %s", entry.Name, err)
+					continue
+				}
+				defer content.Close()
+
+				if err = bookReader(content); err != nil {
+					log.Printf("fail to read book %s", err)
+				}
+			}
+
+		} else if strings.HasSuffix(file, ".fb2") {
+			// TODO: check if it's zipped
+
+			book, err := os.Open(file)
+			if err != nil {
+				return err
+			}
+			defer book.Close()
+
+			err = bookReader(book)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
-func readBook(fileName string) error {
-
-	book, err := os.Open(fileName)
-	if err != nil {
-		return err
-	}
-	defer book.Close()
-
+func bookReader(book io.ReadCloser) error {
 	decoder := xml.NewDecoder(book)
 	decoder.CharsetReader = charset.NewReaderLabel
 
-    // TODO: have to detect file content xml in fb2, zip with fb2 files or zip in fb2 file before loop
+	// TODO: have to detect file content xml in fb2, zip with fb2 files or zip in fb2 file before loop
 	var b Book
 
 	for t, err := decoder.Token(); t != nil; t, err = decoder.Token() {
