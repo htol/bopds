@@ -98,10 +98,10 @@ func readBook(fileName string) error {
 		}
 	}
 
-    if len(b.Title) == 0 {
-        fmt.Println("   ---   Title not found")
-        return nil
-    }
+	if len(b.Title) == 0 {
+		fmt.Println("   ---   Title not found")
+		return nil
+	}
 
 	// fmt.Printf("reuslt: %+v\n", b)
 	fmt.Printf("Autor: %s %s, Title: %s, Lang: %s\n",
