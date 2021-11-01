@@ -15,6 +15,7 @@ func CLI(args []string) int {
 	if err != nil {
 		return 2
 	}
+
 	if err = app.run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
 		return 1

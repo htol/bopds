@@ -1,2 +1,6 @@
+lib
 bopds
 go.sum
+*.fb2
+*.zip
+*.prof
