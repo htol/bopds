@@ -53,10 +53,10 @@ func ScanLibrary(basedir string) error {
 
 	// fmt.Println(files)
 
-	for idx, file := range files {
-		fmt.Printf("Working on file: %d %s\n", idx, file)
+	for _, file := range files {
+		//fmt.Printf("Working on file: %d %s\n", idx, file)
 		if strings.HasSuffix(file, ".zip") {
-			log.Println("archive found")
+			//log.Println("archive found")
 			arch, err := zip.OpenReader(file)
 			if err != nil {
 				log.Fatalf("Failed to open: %s", err)
@@ -64,7 +64,7 @@ func ScanLibrary(basedir string) error {
 			defer arch.Close()
 
 			for _, entry := range arch.File {
-				log.Printf("entry: %+v", entry.Name)
+				//log.Printf("entry: %+v", entry.Name)
 				content, err := entry.Open()
 				if err != nil {
 					log.Printf("Failed to read %s in zip: %s", entry.Name, err)
@@ -133,11 +133,11 @@ func bookReader(book io.ReadCloser) error {
 	}
 
 	// fmt.Printf("reuslt: %+v\n", b)
-	fmt.Printf("Autor: %s %s, Title: %s, Lang: %s\n",
-		b.Author.FirstName,
-		b.Author.LastName,
-		b.Title,
-		b.Lang)
+	//	fmt.Printf("Autor: %s %s, Title: %s, Lang: %s\n",
+	//		b.Author.FirstName,
+	//		b.Author.LastName,
+	//		b.Title,
+	//		b.Lang)
 
 	return nil
 }
