@@ -1,4 +1,4 @@
-# WIP: Basic OPD (bopds)
+# WIP: Basic OPDS (bopds)
 
 Trying to create simple OPDS server wich will be able to serve fb2 books.
 
