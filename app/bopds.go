@@ -11,12 +11,12 @@ import (
 
 func CLI(args []string) int {
 	var app appEnv
-	err := app.fromArgs(args)
-	if err != nil {
+	if err := app.fromArgs(args); err != nil {
+		fmt.Println(err)
 		return 2
 	}
 
-	if err = app.run(); err != nil {
+	if err := app.run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
 		return 1
 	}
@@ -27,6 +27,7 @@ type appEnv struct {
 	server      *http.Server
 	portNumber  int
 	libraryPath string
+	cmd         string
 }
 
 func (app *appEnv) fromArgs(args []string) error {
@@ -40,13 +41,32 @@ func (app *appEnv) fromArgs(args []string) error {
 		return err
 	}
 
+	if fl.NArg() < 1 {
+		return fmt.Errorf("please provide a command to run")
+	}
+
+	switch fl.Arg(0) {
+	case "scan":
+		app.cmd = "scan"
+	case "serve":
+		app.cmd = "serve"
+	default:
+		return fmt.Errorf("unknown command: %s", fl.Arg(0))
+	}
+
 	return nil
 }
 
 func (app *appEnv) run() error {
-	err := scanner.ScanLibrary(app.libraryPath)
-	if err != nil {
-		return err
+	switch app.cmd {
+	case "scan":
+		if err := scanner.ScanLibrary(app.libraryPath); err != nil {
+			return err
+		}
+	case "serve":
+		fmt.Println("TODO: serve not implemented yet")
+	default:
+		fmt.Println("Shouldn't be there: default case in app.run()")
 	}
 	return nil
 }
