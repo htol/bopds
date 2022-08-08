@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/htol/bopds/books"
 	"github.com/htol/bopds/scanner"
 )
 
@@ -50,6 +51,8 @@ func (app *appEnv) fromArgs(args []string) error {
 		app.cmd = "scan"
 	case "serve":
 		app.cmd = "serve"
+	case "init":
+		app.cmd = "init"
 	default:
 		return fmt.Errorf("unknown command: %s", fl.Arg(0))
 	}
@@ -65,6 +68,8 @@ func (app *appEnv) run() error {
 		}
 	case "serve":
 		fmt.Println("TODO: serve not implemented yet")
+	case "init":
+		books.GetStorage()
 	default:
 		fmt.Println("Shouldn't be there: default case in app.run()")
 	}
