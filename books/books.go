@@ -24,8 +24,18 @@ func GetStorage() *Books {
 		defer db.Close()
 
 		sqlStmt := `
-	        create table foo (id integer not null primary key, name text);
-	        delete from foo;
+	        CREATE TABLE IF NOT EXISTS "books" (
+                id integer primary key autoincrement not null,
+                first_name text,
+                last_name text,
+                title text not null,
+                path test not null,
+                fname text not null,
+                archive bool
+            );
+           CREATE INDEX [I_first_name] ON "books" ([first_name]);
+           CREATE INDEX [I_last_name] ON "books" ([last_name]);
+           CREATE INDEX [I_title] ON "books" ([title]);
 	    `
 		_, err = db.Exec(sqlStmt)
 		if err != nil {
@@ -34,6 +44,10 @@ func GetStorage() *Books {
 	}
 
 	return b
+}
+
+func (b *Books) Add() {
+
 }
 
 func (b *Books) List() {
