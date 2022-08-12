@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"archive/zip"
+	"bufio"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,9 +28,30 @@ type Book struct {
 	Lang    string   `xml:"lang"`
 }
 
+const (
+	flAuthor = iota
+	flGenre
+	flTitle
+	flSeries
+	flSerNo
+	flFile
+	flSize
+	flLibID
+	flDeleted
+	flExt
+	flDate
+	flLang
+	flLibRate
+	flKeyWords
+	flURI // depricated?
+)
+
 // ScanLibrary scanning all file names in libraries directories
 func ScanLibrary(basedir string) error {
-	var files []string
+	var (
+		files []string
+		inpxs []string
+	)
 
 	exts := map[string]bool{
 		".fb2": true,
@@ -43,6 +66,9 @@ func ScanLibrary(basedir string) error {
 		if !info.IsDir() && exts[filepath.Ext(path)] {
 			files = append(files, path)
 		}
+		if !info.IsDir() && (filepath.Ext(path) == ".inpx") {
+			inpxs = append(inpxs, path)
+		}
 
 		return nil
 	})
@@ -51,8 +77,98 @@ func ScanLibrary(basedir string) error {
 		return err
 	}
 
-	// fmt.Println(files)
+	if len(inpxs) > 0 {
+		log.Println("Present indexes: ", inpxs)
+		if err = checkInpxFiles(inpxs); err != nil {
+			return err
+		}
+	}
 
+	//if err = checkFilesContent(files); err != nil {
+	//	return err
+	//}
+
+	return nil
+}
+
+func checkInpxFiles(files []string) error {
+	fieldSep := []rune{4}
+	listSep := ":"
+	itemSep := ","
+	for _, file := range files {
+		arch, err := zip.OpenReader(file)
+		if err != nil {
+			log.Fatalf("Failed to open: %s", err)
+		}
+		defer arch.Close()
+
+		for _, entry := range arch.File {
+			if !strings.HasSuffix(entry.Name, ".inp") {
+				continue
+			}
+
+			lookingFor := "lib/" + strings.TrimSuffix(entry.Name, ".inp") + ".zip"
+			if _, err := os.Stat(lookingFor); errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			content, err := entry.Open()
+			if err != nil {
+				log.Printf("Failed to read %s in zip: %s", entry.Name, err)
+				continue
+			}
+			defer content.Close()
+
+			scanner := bufio.NewScanner(content)
+			for scanner.Scan() {
+				a := strings.Split(scanner.Text(), string(fieldSep))
+				//fmt.Printf("%#v\n", a)
+				for fieldIdx, field := range a {
+					switch fieldIdx {
+					case flAuthor:
+						authors := []string{}
+						list := strings.Split(field[:len(field)-1], listSep)
+						//fmt.Printf("list: %#v\n", list)
+						for _, entry := range list {
+							authors = append(authors, strings.Split(entry, itemSep)...)
+						}
+						fmt.Printf("Author: %#v ", authors)
+					case flGenre:
+						genres := []string{}
+						list := strings.Split(field[:len(field)-1], listSep)
+						//fmt.Printf("list: %#v\n", list)
+						genres = append(genres, list...)
+						fmt.Printf("Genres: %s ", genres)
+					case flTitle:
+						fmt.Println("Title: ", field)
+					case flSeries:
+					case flSerNo:
+					case flFile:
+					case flSize:
+					case flLibID:
+					case flDeleted:
+					case flExt:
+					case flDate:
+					case flLang:
+					case flLibRate:
+					case flKeyWords:
+					case flURI: // depricated?
+					default:
+					}
+				}
+			}
+
+		}
+	}
+	return nil
+}
+
+func parseInp(reader *io.ReadCloser) error {
+
+	return nil
+}
+
+func checkFilesContent(files []string) error {
 	for _, file := range files {
 		//fmt.Printf("Working on file: %d %s\n", idx, file)
 		if strings.HasSuffix(file, ".zip") {
@@ -92,7 +208,6 @@ func ScanLibrary(basedir string) error {
 			}
 		}
 	}
-
 	return nil
 }
 

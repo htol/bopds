@@ -3,5 +3,7 @@ package scanner
 import "testing"
 
 func BenchmarkScanLibrary(b *testing.B) {
-	ScanLibrary("../lib")
+	if err := ScanLibrary("../lib"); err != nil {
+		b.Error(err)
+	}
 }
