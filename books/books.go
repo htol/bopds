@@ -24,18 +24,37 @@ func GetStorage() *Books {
 		defer db.Close()
 
 		sqlStmt := `
-	        CREATE TABLE IF NOT EXISTS "books" (
+            DROP TABLE IF EXISTS authors;
+            DROP TABLE IF EXISTS books;
+            DROP TABLE IF EXISTS book_authors;
+            // TODO: Drop indexes
+
+	        CREATE TABLE IF NOT EXISTS "authors" (
                 id integer primary key autoincrement not null,
                 first_name text,
                 last_name text,
-                title text not null,
-                path test not null,
-                fname text not null,
-                archive bool
             );
-           CREATE INDEX [I_first_name] ON "books" ([first_name]);
-           CREATE INDEX [I_last_name] ON "books" ([last_name]);
+           CREATE INDEX [I_first_name] ON "authors" ([first_name]);
+           CREATE INDEX [I_last_name] ON "authors" ([last_name]);
+           CREATE INDEX [I_middle_name ON "authors" ([middle_name]);
+
+           CREATE TABLE IF NOT EXISTS "books" (
+                id integer primary key autoincrement not null,
+                title text,
+                authors integer,
+            );
            CREATE INDEX [I_title] ON "books" ([title]);
+           CREATE INDEX [I_authors] ON "books" ([authors]);
+
+           CREATE TABLE IF NOT EXISTS "book_authors" (
+               id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+               book_id INTEGER NOT NULL,
+               autor_id INTEGER NOT NULL,
+               FOREIGN KEY (book_id) REFERENCES books(id),
+               FOREIGN KEY (autor_id) REFERENCES authors(id),
+           );
+           CREATE INDEX [I_book_id] ON "book_authors" ([book_id]);
+           CREATE INDEX [I_author_id] ON "book_authors" ([autor_id]);
 	    `
 		_, err = db.Exec(sqlStmt)
 		if err != nil {
