@@ -7,26 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/repo"
 	"golang.org/x/net/html/charset"
 )
-
-type Author struct {
-	XMLName   xml.Name `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 author"`
-	FirstName string   `xml:"first-name"`
-	LastName  string   `xml:"last-name"`
-}
-
-type Book struct {
-	XMLName xml.Name `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 title-info"`
-	Author  Author   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 author"`
-	Title   string   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 book-title"`
-	Lang    string   `xml:"lang"`
-}
 
 const (
 	flAuthor = iota
@@ -58,15 +48,15 @@ func ScanLibrary(basedir string) error {
 		".zip": true,
 	}
 
-	err := filepath.Walk(basedir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(basedir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if !info.IsDir() && exts[filepath.Ext(path)] {
+		if !d.IsDir() && exts[filepath.Ext(path)] {
 			files = append(files, path)
 		}
-		if !info.IsDir() && (filepath.Ext(path) == ".inpx") {
+		if !d.IsDir() && (filepath.Ext(path) == ".inpx") {
 			inpxs = append(inpxs, path)
 		}
 
@@ -79,7 +69,7 @@ func ScanLibrary(basedir string) error {
 
 	if len(inpxs) > 0 {
 		log.Println("Present indexes: ", inpxs)
-		if err = checkInpxFiles(inpxs); err != nil {
+		if err = checkInpxFiles(basedir, inpxs); err != nil {
 			return err
 		}
 	}
@@ -91,10 +81,8 @@ func ScanLibrary(basedir string) error {
 	return nil
 }
 
-func checkInpxFiles(files []string) error {
-	fieldSep := []rune{4}
-	listSep := ":"
-	itemSep := ","
+func checkInpxFiles(basedir string, files []string) error {
+	db := repo.GetStorage("books.db")
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
 		if err != nil {
@@ -102,60 +90,34 @@ func checkInpxFiles(files []string) error {
 		}
 		defer arch.Close()
 
-		for _, entry := range arch.File {
-			if !strings.HasSuffix(entry.Name, ".inp") {
+		for _, archiveEntry := range arch.File {
+			if !strings.HasSuffix(archiveEntry.Name, ".inp") {
 				continue
 			}
 
-			lookingFor := "lib/" + strings.TrimSuffix(entry.Name, ".inp") + ".zip"
-			if _, err := os.Stat(lookingFor); errors.Is(err, os.ErrNotExist) {
+			// don't scan inp if library archive absent
+			// TODO: return archive names present in index
+			libArchiveFile := filepath.Join(basedir, strings.TrimSuffix(archiveEntry.Name, ".inp")+".zip")
+			if _, err := os.Stat(libArchiveFile); errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 
-			content, err := entry.Open()
+			content, err := archiveEntry.Open()
 			if err != nil {
-				log.Printf("Failed to read %s in zip: %s", entry.Name, err)
+				log.Printf("Failed to read %s in zip: %s", archiveEntry.Name, err)
 				continue
 			}
 			defer content.Close()
 
 			scanner := bufio.NewScanner(content)
+			entrySeparator := []rune{4}
 			for scanner.Scan() {
-				a := strings.Split(scanner.Text(), string(fieldSep))
-				//fmt.Printf("%#v\n", a)
-				for fieldIdx, field := range a {
-					switch fieldIdx {
-					case flAuthor:
-						authors := []string{}
-						list := strings.Split(field[:len(field)-1], listSep)
-						//fmt.Printf("list: %#v\n", list)
-						for _, entry := range list {
-							authors = append(authors, strings.Split(entry, itemSep)...)
-						}
-						fmt.Printf("Author: %#v ", authors)
-					case flGenre:
-						genres := []string{}
-						list := strings.Split(field[:len(field)-1], listSep)
-						//fmt.Printf("list: %#v\n", list)
-						genres = append(genres, list...)
-						fmt.Printf("Genres: %s ", genres)
-					case flTitle:
-						fmt.Println("Title: ", field)
-					case flSeries:
-					case flSerNo:
-					case flFile:
-					case flSize:
-					case flLibID:
-					case flDeleted:
-					case flExt:
-					case flDate:
-					case flLang:
-					case flLibRate:
-					case flKeyWords:
-					case flURI: // depricated?
-					default:
-					}
-				}
+				inpEntry := strings.Split(scanner.Text(), string(entrySeparator))
+				//fmt.Printf("%#v\n", inpEntry)
+				bookEntry := parseInpEntry(inpEntry)
+				bookEntry.Archive = libArchiveFile
+				//fmt.Printf("%#v\n", bookEntry)
+				db.Add(bookEntry)
 			}
 
 		}
@@ -166,6 +128,61 @@ func checkInpxFiles(files []string) error {
 func parseInp(reader *io.ReadCloser) error {
 
 	return nil
+}
+
+func parseInpEntry(entry []string) *book.Book {
+	const (
+		listSep = ":"
+		itemSep = ","
+	)
+	bookEntry := &book.Book{}
+	for fieldIdx, field := range entry {
+		switch fieldIdx {
+		case flAuthor:
+			list := strings.Split(field[:len(field)-1], listSep)
+			//fmt.Printf("list: %#v\n", list)
+			for _, entry := range list {
+				parts := strings.Split(entry, itemSep)
+				author := &book.Author{
+					FirstName:  parts[1],
+					MiddleName: parts[2],
+					LastName:   parts[0],
+				}
+				bookEntry.Author = append(bookEntry.Author, *author)
+			}
+			// fmt.Printf("Author: %#v\n", book.Author)
+		case flGenre:
+			genres := strings.Split(field[:len(field)-1], listSep)
+			//fmt.Printf("list: %#v\n", genres)
+			bookEntry.Genres = genres
+		case flTitle:
+			bookEntry.Title = field
+		case flSeries:
+			//fmt.Println(field)
+		case flSerNo:
+			// probably seq number (tome number) in series
+			//fmt.Println(field)
+		case flFile:
+			bookEntry.FileName = field
+		case flSize:
+			//file size
+		case flLibID:
+			// was equal to filename number
+		case flDeleted:
+			// TODO: need further investigation
+			//fmt.Println(field)
+		case flExt:
+			bookEntry.FileName += "." + field
+		case flDate:
+		case flLang:
+			bookEntry.Lang = field
+		case flLibRate:
+		case flKeyWords:
+		case flURI: // depricated?
+		default:
+		}
+	}
+	return bookEntry
 }
 
 func checkFilesContent(files []string) error {
@@ -211,12 +228,12 @@ func checkFilesContent(files []string) error {
 	return nil
 }
 
-func bookReader(book io.ReadCloser) error {
-	decoder := xml.NewDecoder(book)
+func bookReader(bookContent io.ReadCloser) error {
+	decoder := xml.NewDecoder(bookContent)
 	decoder.CharsetReader = charset.NewReaderLabel
 
 	// TODO: have to detect file content xml in fb2, zip with fb2 files or zip in fb2 file before loop
-	var b Book
+	var b book.Book
 
 	for t, err := decoder.Token(); t != nil; t, err = decoder.Token() {
 		if err != nil {

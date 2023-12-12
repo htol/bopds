@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/htol/bopds/books"
+	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
 )
 
@@ -46,16 +46,7 @@ func (app *appEnv) fromArgs(args []string) error {
 		return fmt.Errorf("please provide a command to run")
 	}
 
-	switch fl.Arg(0) {
-	case "scan":
-		app.cmd = "scan"
-	case "serve":
-		app.cmd = "serve"
-	case "init":
-		app.cmd = "init"
-	default:
-		return fmt.Errorf("unknown command: %s", fl.Arg(0))
-	}
+	app.cmd = fl.Arg(0)
 
 	return nil
 }
@@ -67,11 +58,12 @@ func (app *appEnv) run() error {
 			return err
 		}
 	case "serve":
+		//http.ListenAndServe(fmt.Sprintf(":%d", app.portNumber), nil)
 		fmt.Println("TODO: serve not implemented yet")
 	case "init":
-		books.GetStorage()
+		repo.GetStorage("books.db")
 	default:
-		fmt.Println("Shouldn't be there: default case in app.run()")
+		return fmt.Errorf("unknown command %s", app.cmd)
 	}
 	return nil
 }
