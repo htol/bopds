@@ -3,13 +3,13 @@ package repo
 import (
 	"database/sql"
 	"log"
-	"os"
 
 	"github.com/htol/bopds/book"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Repo struct {
+	db          *sql.DB
 	path        string
 	autorsCache map[book.Author]int64
 	//authorsTotal uint
@@ -25,19 +25,14 @@ func GetStorage(path string) *Repo {
 		//authorsSeq:   0,
 	}
 
-	if _, err := os.Stat(r.path); os.IsNotExist(err) {
-		db, err := sql.Open("sqlite3", r.path)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.Close()
+	db, err := sql.Open("sqlite3", r.path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r.db = db
 
-		// TODO: Drop indexes
-		sqlStmt := `
-           DROP TABLE IF EXISTS authors;
-           DROP TABLE IF EXISTS books;
-           DROP TABLE IF EXISTS book_authors;
-
+	// TODO: Drop indexes
+	sqlStmt := `
            CREATE TABLE IF NOT EXISTS "authors" (
                id integer primary key autoincrement not null,
                first_name text,
@@ -45,9 +40,9 @@ func GetStorage(path string) *Repo {
                last_name text,
                UNIQUE(first_name, middle_name, last_name)
            );
-           CREATE INDEX [I_first_name] ON "authors" ([first_name]);
-           CREATE INDEX [I_last_name] ON "authors" ([last_name]);
-           CREATE INDEX [I_middle_name] ON "authors" ([middle_name]);
+           CREATE INDEX IF NOT EXISTS [I_first_name] ON "authors" ([first_name]);
+           CREATE INDEX IF NOT EXISTS [I_last_name] ON "authors" ([last_name]);
+           CREATE INDEX IF NOT EXISTS [I_middle_name] ON "authors" ([middle_name]);
 
            CREATE TABLE IF NOT EXISTS "books" (
                 id integer primary key autoincrement not null,
@@ -57,8 +52,8 @@ func GetStorage(path string) *Repo {
                 archive text,
                 filename text
             );
-           CREATE INDEX [I_title] ON "books" ([title]);
-           CREATE INDEX [I_authors] ON "books" ([authors]);
+           CREATE INDEX IF NOT EXISTS [I_title] ON "books" ([title]);
+           CREATE INDEX IF NOT EXISTS [I_authors] ON "books" ([authors]);
 
            CREATE TABLE IF NOT EXISTS "book_authors" (
                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -67,13 +62,12 @@ func GetStorage(path string) *Repo {
                FOREIGN KEY (book_id) REFERENCES books(id),
                FOREIGN KEY (author_id) REFERENCES authors(id)
            );
-           CREATE INDEX [I_book_id] ON "book_authors" ([book_id]);
-           CREATE INDEX [I_author_id] ON "book_authors" ([author_id]);
+           CREATE INDEX IF NOT EXISTS [I_book_id] ON "book_authors" ([book_id]);
+           CREATE INDEX IF NOT EXISTS [I_author_id] ON "book_authors" ([author_id]);
 	    `
-		_, err = db.Exec(sqlStmt)
-		if err != nil {
-			log.Fatalf("%q: %s\n", err, sqlStmt)
-		}
+	_, err = db.Exec(sqlStmt)
+	if err != nil {
+		log.Fatalf("%q: %s\n", err, sqlStmt)
 	}
 
 	r.initAuthorsCache()
@@ -81,16 +75,14 @@ func GetStorage(path string) *Repo {
 	return r
 }
 
-func (r *Repo) initAuthorsCache() error {
-	db, err := sql.Open("sqlite3", r.path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+func (r *Repo) Close() {
+	r.db.Close()
+}
 
+func (r *Repo) initAuthorsCache() error {
 	QUERY := `SELECT id, first_name, middle_name, last_name FROM authors`
 
-	rows, err := db.Query(QUERY)
+	rows, err := r.db.Query(QUERY)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -98,28 +90,22 @@ func (r *Repo) initAuthorsCache() error {
 
 	for rows.Next() {
 		var a book.Author
-		var bookID int64
+		var authorId int64
 
-		rows.Scan(&bookID, &a.FirstName, &a.MiddleName, &a.LastName)
-		r.autorsCache[a] = bookID
+		rows.Scan(&authorId, &a.FirstName, &a.MiddleName, &a.LastName)
+		r.autorsCache[a] = authorId
 	}
 
 	return nil
 }
 
 func (r *Repo) Add(record *book.Book) error {
-	db, err := sql.Open("sqlite3", r.path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
 	authorsIDs := r.getOrCreateAuthor(record.Author) // TODO: plural name?
 	//log.Printf("%#v", authorsIDs)
 	//return nil
 
 	INSERT_BOOK := `INSERT INTO books(title, lang, archive, filename) VALUES(?, ?, ?, ?)`
-	insertStm, err := db.Prepare(INSERT_BOOK)
+	insertStm, err := r.db.Prepare(INSERT_BOOK)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,7 +115,7 @@ func (r *Repo) Add(record *book.Book) error {
 	}
 	bookID, _ := sqlresult.LastInsertId()
 
-	tx, err := db.Begin()
+	tx, err := r.db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -165,12 +151,6 @@ func (r *Repo) List() error {
 }
 
 //func (b *Books) BulkInsert(records []*book.Book) {
-//	db, err := sql.Open("sqlite3", b.path)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer db.Close()
-//
 //	tx, err := db.Begin()
 //	if err != nil {
 //		log.Fatal(err)
@@ -196,18 +176,14 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
 	if len(authors) < 1 {
 		return nil
 	}
-	db, err := sql.Open("sqlite3", r.path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+
 	result := []int64{}
 	// TODO: BUG: will not return id if already in table
 	// TODO: probably have to rework this part
 	// 1. autorsCache should be initially populated from db
 	// 2. if no authoer in cache then create without ignore
 	INSERT_AUTHOR := `INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING id`
-	insertStm, err := db.Prepare(INSERT_AUTHOR)
+	insertStm, err := r.db.Prepare(INSERT_AUTHOR)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -229,4 +205,28 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
 		//log.Printf("%d:%d %#v\n", r.authorsTotal, id, author)
 	}
 	return result
+}
+
+func (r *Repo) GetAuthors() ([]book.Author, error) {
+	QUERY := `SELECT first_name, middle_name, last_name FROM authors`
+
+	rows, err := r.db.Query(QUERY)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	authors := make([]book.Author, 0)
+	for rows.Next() {
+		var a book.Author
+
+		rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName)
+		authors = append(authors, a)
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	return authors, nil
 }

@@ -3,12 +3,15 @@ package app
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
 )
+
+var storage *repo.Repo
 
 func CLI(args []string) int {
 	var app appEnv
@@ -58,12 +61,41 @@ func (app *appEnv) run() error {
 			return err
 		}
 	case "serve":
-		//http.ListenAndServe(fmt.Sprintf(":%d", app.portNumber), nil)
-		fmt.Println("TODO: serve not implemented yet")
+		storage = repo.GetStorage("books.db")
+		defer storage.Close()
+		log.Printf("local access http://localhost:%d\n", app.portNumber)
+		app.serve()
 	case "init":
-		repo.GetStorage("books.db")
+		storage = repo.GetStorage("books.db")
+		defer storage.Close()
 	default:
 		return fmt.Errorf("unknown command %s", app.cmd)
 	}
 	return nil
+}
+
+func (app *appEnv) serve() {
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", app.portNumber),
+		Handler: router(),
+	}
+	srv.ListenAndServe()
+}
+
+func router() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", indexHandler)
+	mux.HandleFunc("/a", getAuthors)
+	return mux
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("<h1>Hello!<h1>"))
+}
+
+func getAuthors(w http.ResponseWriter, r *http.Request) {
+	authors, err := storage.GetAuthors()
+	if err != nil {
+		log.Fatal("getAuthor: ", err)
+	}
+	fmt.Fprintf(w, "%#v", authors)
 }

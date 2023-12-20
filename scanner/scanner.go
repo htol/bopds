@@ -83,6 +83,8 @@ func ScanLibrary(basedir string) error {
 
 func checkInpxFiles(basedir string, files []string) error {
 	db := repo.GetStorage("books.db")
+	defer db.Close()
+
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
 		if err != nil {
