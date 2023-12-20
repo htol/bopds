@@ -2,16 +2,18 @@ package repo
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/htol/bopds/book"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Repo struct {
-	db          *sql.DB
-	path        string
-	autorsCache map[book.Author]int64
+	db           *sql.DB
+	path         string
+	AuthorsCache map[book.Author]int64
 	//authorsTotal uint
 	//authorsSeq   uint
 }
@@ -19,8 +21,8 @@ type Repo struct {
 func GetStorage(path string) *Repo {
 	// TODO: parametrize path for sqllitedb
 	r := &Repo{
-		path:        path,
-		autorsCache: make(map[book.Author]int64),
+		path:         path,
+		AuthorsCache: make(map[book.Author]int64),
 		//authorsTotal: 0,
 		//authorsSeq:   0,
 	}
@@ -93,7 +95,7 @@ func (r *Repo) initAuthorsCache() error {
 		var authorId int64
 
 		rows.Scan(&authorId, &a.FirstName, &a.MiddleName, &a.LastName)
-		r.autorsCache[a] = authorId
+		r.AuthorsCache[a] = authorId
 	}
 
 	return nil
@@ -190,7 +192,7 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
 	defer insertStm.Close()
 
 	for _, author := range authors {
-		id, ok := r.autorsCache[author]
+		id, ok := r.AuthorsCache[author]
 		if ok {
 			result = append(result, id)
 			continue
@@ -201,7 +203,7 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
 		}
 		id, _ = sqlresult.LastInsertId()
 		//log.Printf("#%v #%v", id, err)
-		r.autorsCache[author] = id
+		r.AuthorsCache[author] = id
 		//log.Printf("%d:%d %#v\n", r.authorsTotal, id, author)
 	}
 	return result
@@ -229,4 +231,45 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 	}
 
 	return authors, nil
+}
+
+func (r *Repo) GetBooks() ([]string, error) {
+	QUERY := `SELECT * FROM books`
+
+	rows, err := r.db.Query(QUERY)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	books := make([]string, 0)
+
+	for rows.Next() {
+		columns := make([]sql.NullString, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i := range columns {
+			columnPointers[i] = &columns[i]
+		}
+		err := rows.Scan(columnPointers...)
+		if err != nil {
+			log.Fatalf("GetBooks: %s", err)
+		}
+		var sb strings.Builder
+		for i := range cols {
+			fmt.Fprintf(&sb, "%s, ", columns[i].String)
+		}
+
+		books = append(books, sb.String())
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	return books, nil
 }

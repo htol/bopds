@@ -85,6 +85,7 @@ func router() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/a", getAuthors)
+	mux.HandleFunc("/b", getBooks)
 	return mux
 }
 
@@ -97,5 +98,18 @@ func getAuthors(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal("getAuthor: ", err)
 	}
-	fmt.Fprintf(w, "%#v", authors)
+	for _, author := range authors {
+		fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
+	}
+}
+
+func getBooks(w http.ResponseWriter, r *http.Request) {
+	books, err := storage.GetBooks()
+	if err != nil {
+		log.Fatal("getBooks: ", err)
+	}
+
+	for _, book := range books {
+		fmt.Fprintf(w, "%s\n", book)
+	}
 }

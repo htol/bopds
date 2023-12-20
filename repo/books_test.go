@@ -17,6 +17,6 @@ func TestGetOrCreateAuthor(t *testing.T) {
 			LastName:   "Иванов"},
 	}
 	db.getOrCreateAuthor(authors)
-	t.Logf("#%v", db.autorsCache)
+	t.Logf("#%v", db.AuthorsCache)
 
 }
