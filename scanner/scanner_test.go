@@ -3,6 +3,7 @@ package scanner
 import (
 	"encoding/xml"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/htol/bopds/book"
@@ -15,10 +16,12 @@ func BenchmarkScanLibrary(b *testing.B) {
 }
 
 func TestParseInpEntry(t *testing.T) {
+	entrySeparator := []rune{4}
 
 	s := []string{"Амнуэль,Песах,Рафаэлович:Леонидов,Роман,Леонидович:",
 		"sf:", "Престиж Небесной империи", "", "", "1310", "8962", "1310", "1",
 		"fb2", "2007-06-20", "ru", "", "", ""}
+	s1 := strings.Split("Абеляр,Пьер,:sci_philosophy:История моих бедствий125954261251fb22007-06-29ru", string(entrySeparator))
 	expecting := &book.Book{
 		XMLName: xml.Name{Space: "", Local: ""},
 		Author: []book.Author{
@@ -32,4 +35,7 @@ func TestParseInpEntry(t *testing.T) {
 		t.Logf("%#v", expecting)
 		t.Error("inp entry parsed incorrectly")
 	}
+
+	bookEntry1 := parseInpEntry(s1)
+	t.Logf("%#v", bookEntry1)
 }
