@@ -15,7 +15,7 @@ func TestGetOrCreateAuthor(t *testing.T) {
 	db := GetStorage("test.db")
 	defer db.Close()
 	authors := []book.Author{
-		book.Author{
+		{
 			XMLName:    xml.Name{},
 			FirstName:  "Василий",
 			MiddleName: "Петрович",

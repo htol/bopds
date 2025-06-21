@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -88,6 +89,7 @@ func router() http.Handler {
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/a", getAuthors)
 	mux.HandleFunc("/b", getBooks)
+	mux.Handle("/api/authors", withCORS(getAuthorsByLetter()))
 	return mux
 }
 
@@ -103,6 +105,26 @@ func getAuthors(w http.ResponseWriter, r *http.Request) {
 	for _, author := range authors {
 		fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
 	}
+}
+
+func getAuthorsByLetter() http.Handler {
+	hf := func(w http.ResponseWriter, r *http.Request) {
+		letters := r.URL.Query().Get("startsWith")
+		if letters == "" {
+			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
+			return
+		}
+		authors, err := storage.GetAuthorsByLetter(letters)
+		if err != nil {
+			log.Fatal("getAuthorsByLetter: ", err)
+		}
+		/* for _, author := range authors {
+			fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
+		} */
+		w.Header().Set("Content-Type", "applcation/json")
+		json.NewEncoder(w).Encode(authors)
+	}
+	return http.HandlerFunc(hf)
 }
 
 func getBooks(w http.ResponseWriter, r *http.Request) {

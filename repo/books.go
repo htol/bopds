@@ -232,6 +232,31 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 	return authors, nil
 }
 
+func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
+	pattern := strings.Title(letters) + "%"
+	QUERY := `SELECT first_name, middle_name, last_name FROM authors WHERE last_name LIKE ? COLLATE NOCASE ORDER BY last_name`
+
+	rows, err := r.db.Query(QUERY, pattern)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	authors := make([]book.Author, 0)
+	for rows.Next() {
+		var a book.Author
+
+		rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName)
+		authors = append(authors, a)
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	return authors, nil
+}
+
 func (r *Repo) GetBooks() ([]string, error) {
 	QUERY := `SELECT * FROM books`
 

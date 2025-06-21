@@ -3,7 +3,7 @@ package book
 import "encoding/xml"
 
 type Author struct {
-	XMLName    xml.Name `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 author"`
+	XMLName    xml.Name `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 author" json:"-"`
 	FirstName  string   `xml:"first-name"`
 	MiddleName string   `xml:"middle-name"`
 	LastName   string   `xml:"last-name"`
