@@ -1,6 +1,8 @@
 lib/*
 bopds
 books.db
+books.db-shm
+books.db-wal
 go.sum
 *.fb2
 *.zip
