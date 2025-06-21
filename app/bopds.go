@@ -86,15 +86,15 @@ func (app *appEnv) serve() {
 
 func router() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", indexHandler)
+	mux.Handle("/", indexHandler())
 	mux.HandleFunc("/a", getAuthors)
 	mux.HandleFunc("/b", getBooks)
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetter()))
 	return mux
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("<h1>Hello!<h1>"))
+func indexHandler() http.Handler {
+	return http.FileServer(http.Dir("./frontend/dist"))
 }
 
 func getAuthors(w http.ResponseWriter, r *http.Request) {

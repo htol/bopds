@@ -1,4 +1,5 @@
 lib/*
+tmp/*
 bopds
 books.db
 books.db-shm

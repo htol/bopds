@@ -1,16 +1,15 @@
 <template>
     <div>
-        <h1>Авторы</h1>
-        <AuthorList />
+        <LibraryTabs />
     </div>
 </template>
 
 <script>
-import AuthorList from './components/AuthorList.vue'
+import LibraryTabs from './components/LibraryTabs.vue'
 
 export default {
     components: {
-        AuthorList
+        LibraryTabs
     }
 }
 </script>
