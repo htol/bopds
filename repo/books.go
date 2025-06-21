@@ -27,10 +27,11 @@ func GetStorage(path string) *Repo {
 		//authorsSeq:   0,
 	}
 
-	db, err := sql.Open("sqlite3", r.path)
+	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")
 	if err != nil {
 		log.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	r.db = db
 
 	// TODO: Drop indexes

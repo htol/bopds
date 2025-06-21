@@ -57,7 +57,9 @@ func (app *appEnv) fromArgs(args []string) error {
 func (app *appEnv) run() error {
 	switch app.cmd {
 	case "scan":
-		if err := scanner.ScanLibrary(app.libraryPath); err != nil {
+		storage := repo.GetStorage("books.db")
+		defer storage.Close()
+		if err := scanner.ScanLibrary(app.libraryPath, storage); err != nil {
 			return err
 		}
 	case "serve":

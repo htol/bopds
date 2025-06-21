@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/repo"
 )
 
 func BenchmarkScanLibrary(b *testing.B) {
-	if err := ScanLibrary("../lib"); err != nil {
+	storage := repo.GetStorage("books_test.db")
+	if err := ScanLibrary("../lib", storage); err != nil {
 		b.Error(err)
 	}
 }

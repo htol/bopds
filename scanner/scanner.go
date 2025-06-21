@@ -3,6 +3,7 @@ package scanner
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -12,10 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/htol/bopds/book"
-	"github.com/htol/bopds/repo"
 	"golang.org/x/net/html/charset"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -36,8 +38,12 @@ const (
 	flURI // depricated?
 )
 
+type Storager interface {
+	Add(*book.Book) error
+}
+
 // ScanLibrary scanning all file names in libraries directories
-func ScanLibrary(basedir string) error {
+func ScanLibrary(basedir string, storage Storager) error {
 	var (
 		files []string
 		inpxs []string
@@ -67,12 +73,32 @@ func ScanLibrary(basedir string) error {
 		return err
 	}
 
-	if len(inpxs) > 0 {
-		log.Println("Present indexes: ", inpxs)
-		if err = checkInpxFiles(basedir, inpxs); err != nil {
-			return err
+	wg := sync.WaitGroup{}
+	entries := make(chan *book.Book)
+
+	g, ctx := errgroup.WithContext(context.Background())
+
+	wg.Add(1)
+	g.Go(func() error {
+		defer wg.Done()
+		if len(inpxs) > 0 {
+			log.Println("Present indexes: ", inpxs)
+			if err = checkInpxFiles(ctx, basedir, inpxs, entries); err != nil {
+				return err
+			}
 		}
-	}
+		return nil
+	})
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for entry := range entries {
+			storage.Add(entry)
+		}
+	}()
+
+	wg.Wait()
 
 	//if err = checkFilesContent(files); err != nil {
 	//	return err
@@ -81,9 +107,7 @@ func ScanLibrary(basedir string) error {
 	return nil
 }
 
-func checkInpxFiles(basedir string, files []string) error {
-	db := repo.GetStorage("books.db")
-	defer db.Close()
+func checkInpxFiles(ctx context.Context, basedir string, files []string, entries chan<- *book.Book) error {
 
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
@@ -119,8 +143,13 @@ func checkInpxFiles(basedir string, files []string) error {
 				bookEntry := parseInpEntry(inpEntry)
 				bookEntry.Archive = libArchiveFile
 				//fmt.Printf("%#v\n", bookEntry)
-				db.Add(bookEntry)
+				select {
+				case entries <- bookEntry:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
+			defer close(entries)
 
 		}
 	}
