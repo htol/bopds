@@ -3,31 +3,9 @@
         <div class="grid justify-center">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800">Алфавитный указатель фамилий авторов</h2>
         </div>
-
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="content-center">
-                <div class="grid justify-center">
-                    <h3 class="text-lg font-medium mb-2 text-gray-700">Русский</h3>
-                </div>
-                <div class="flex flex-wrap gap-2 justify-center">
-                    <button v-for="letter in alphabet_ru" :key="'ru-' + letter" @click="selectLetter(letter)"
-                        :class="buttonClass(letter)">
-                        {{ letter }}
-                    </button>
-                </div>
-            </div>
-
-            <div>
-                <div class="grid justify-center">
-                    <h3 class="text-lg font-medium mb-2 text-gray-700">English</h3>
-                </div>
-                <div class="flex flex-wrap gap-2 justify-center">
-                    <button v-for="letter in alphabet_en" :key="'en-' + letter" @click="selectLetter(letter)"
-                        :class="buttonClass(letter)">
-                        {{ letter }}
-                    </button>
-                </div>
-            </div>
+        <div class="grid p-6">
+            <AlphabetsFilter v-model:selectedAlphabet="alphabet" :selectedLetter="selectedLetter"
+                @select="selectLetter" />
         </div>
 
         <!-- Search -->
@@ -57,6 +35,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import AlphabetsFilter from '@/components/AlphabetsFilter.vue'
 import Paginator from '@/components/Paginator.vue'
 import SearchInput from '@/components/SearchInput.vue'
 
