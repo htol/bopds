@@ -298,6 +298,30 @@ func (r *Repo) GetBooks() ([]string, error) {
 	return books, nil
 }
 
+func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
+	pattern := strings.Title(letters) + "%"
+	QUERY := `SELECT  Title FROM books WHERE title LIKE ? COLLATE NOCASE ORDER BY title`
+
+	rows, err := r.db.Query(QUERY, pattern)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	books := make([]book.Book, 0)
+	for rows.Next() {
+		var a book.Book
+
+		rows.Scan(&a.Title)
+		books = append(books, a)
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	return books, nil
+}
 func (r *Repo) GetBooksByAuthorID(id int64) ([]string, error) {
 	QUERY := `
 SELECT *

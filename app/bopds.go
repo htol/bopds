@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
@@ -17,12 +16,12 @@ var storage *repo.Repo
 func CLI(args []string) int {
 	var app appEnv
 	if err := app.fromArgs(args); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return 2
 	}
 
 	if err := app.run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
+		log.Printf("Runtime error: %v\n", err)
 		return 1
 	}
 	return 0
@@ -90,6 +89,7 @@ func router() http.Handler {
 	mux.HandleFunc("/a", getAuthors)
 	mux.HandleFunc("/b", getBooks)
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetter()))
+	mux.Handle("/api/books", withCORS(getBooksByLetter()))
 	return mux
 }
 
@@ -136,6 +136,23 @@ func getBooks(w http.ResponseWriter, r *http.Request) {
 	for _, book := range books {
 		fmt.Fprintf(w, "%s\n", book)
 	}
+}
+
+func getBooksByLetter() http.Handler {
+	hf := func(w http.ResponseWriter, r *http.Request) {
+		letters := r.URL.Query().Get("startsWith")
+		if letters == "" {
+			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
+			return
+		}
+		books, err := storage.GetBooksByLetter(letters)
+		if err != nil {
+			log.Fatal("getBooksByLetter: ", err)
+		}
+		w.Header().Set("Content-Type", "applcation/json")
+		json.NewEncoder(w).Encode(books)
+	}
+	return http.HandlerFunc(hf)
 }
 
 func withCORS(h http.Handler) http.Handler {
