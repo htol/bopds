@@ -70,7 +70,9 @@ func GetStorage(path string) *Repo {
 		log.Fatalf("%q: %s\n", err, sqlStmt)
 	}
 
-	r.initAuthorsCache()
+	if err := r.initAuthorsCache(); err != nil {
+		log.Fatalf("init authors cache: %v", err)
+	}
 
 	return r
 }
@@ -84,7 +86,7 @@ func (r *Repo) initAuthorsCache() error {
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
-		log.Fatalf("initAuthorsCache: query: %s", err)
+		return fmt.Errorf("query authors cache: %w", err)
 	}
 	defer rows.Close()
 
@@ -92,7 +94,9 @@ func (r *Repo) initAuthorsCache() error {
 		var a book.Author
 		var authorId int64
 
-		rows.Scan(&authorId, &a.FirstName, &a.MiddleName, &a.LastName)
+		if err := rows.Scan(&authorId, &a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+			return fmt.Errorf("scan author cache: %w", err)
+		}
 		r.AuthorsCache[a] = authorId
 	}
 
@@ -100,43 +104,48 @@ func (r *Repo) initAuthorsCache() error {
 }
 
 func (r *Repo) Add(record *book.Book) error {
-	authorsIDs := r.getOrCreateAuthor(record.Author) // TODO: plural name?
-	//log.Printf("%#v", authorsIDs)
-	//return nil
+	authorsIDs, err := r.getOrCreateAuthor(record.Author)
+	if err != nil {
+		return fmt.Errorf("get or create author: %w", err)
+	}
 
 	INSERT_BOOK := `INSERT INTO books(title, lang, archive, filename) VALUES(?, ?, ?, ?)`
 	insertStm, err := r.db.Prepare(INSERT_BOOK)
 	if err != nil {
-		log.Fatalf("Add: insertStm1: %s", err)
+		return fmt.Errorf("prepare insert book: %w", err)
 	}
+	defer insertStm.Close()
+
 	sqlresult, err := insertStm.Exec(record.Title, record.Lang, record.Archive, record.FileName)
 	if err != nil {
-		log.Fatalf("Add: insertStm2: %s", err)
+		return fmt.Errorf("insert book: %w", err)
 	}
-	bookID, _ := sqlresult.LastInsertId()
+	bookID, err := sqlresult.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get book id: %w", err)
+	}
 
 	tx, err := r.db.Begin()
 	if err != nil {
-		log.Fatalf("Add: begin tx: %s", err)
+		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO book_authors(book_id, author_id) VALUES(?, ?)`)
 	if err != nil {
-		log.Fatalf("Add: tx prepare: %s", err)
+		tx.Rollback()
+		return fmt.Errorf("prepare book_authors: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, author := range authorsIDs {
-		_, err := stmt.Exec(bookID, author)
-		if err != nil {
-			log.Fatalf("Add: tx exec: %s", err)
+		if _, err := stmt.Exec(bookID, author); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("insert book_author: %w", err)
 		}
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		log.Fatalf("Add: tx commit: %s", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return nil
@@ -172,20 +181,16 @@ func (r *Repo) List() error {
 //	tx.Commit()
 //}
 
-func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
+func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 	if len(authors) < 1 {
-		return nil
+		return nil, nil
 	}
 
 	result := []int64{}
-	// TODO: BUG: will not return id if already in table
-	// TODO: probably have to rework this part
-	// 1. autorsCache should be initially populated from db
-	// 2. if no authoer in cache then create without ignore
 	INSERT_AUTHOR := `INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id`
 	insertStm, err := r.db.Prepare(INSERT_AUTHOR)
 	if err != nil {
-		log.Fatalf("getOrCreateAuthor: prepare insert: %s", err)
+		return nil, fmt.Errorf("prepare insert author: %w", err)
 	}
 	defer insertStm.Close()
 
@@ -197,15 +202,16 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) []int64 {
 		}
 		sqlresult, err := insertStm.Exec(author.FirstName, author.MiddleName, author.LastName)
 		if err != nil {
-			log.Fatalf("getOrCreateAuthor: insert exec: %s", err)
+			return nil, fmt.Errorf("insert author: %w", err)
 		}
-		id, _ = sqlresult.LastInsertId()
-		//log.Printf("%#v %#v", id, err)
+		id, err = sqlresult.LastInsertId()
+		if err != nil {
+			return nil, fmt.Errorf("get author id: %w", err)
+		}
 		r.AuthorsCache[author] = id
 		result = append(result, id)
-		//log.Printf("%d:%d %#v\n", r.authorsTotal, id, author)
 	}
-	return result
+	return result, nil
 }
 
 func (r *Repo) GetAuthors() ([]book.Author, error) {
@@ -213,7 +219,7 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("query authors: %w", err)
 	}
 	defer rows.Close()
 
@@ -221,12 +227,13 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 	for rows.Next() {
 		var a book.Author
 
-		rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName)
+		if err := rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+			return nil, fmt.Errorf("scan author: %w", err)
+		}
 		authors = append(authors, a)
 	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate authors: %w", err)
 	}
 
 	return authors, nil
@@ -238,7 +245,7 @@ func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("query authors by letter: %w", err)
 	}
 	defer rows.Close()
 
@@ -246,12 +253,13 @@ func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	for rows.Next() {
 		var a book.Author
 
-		rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName)
+		if err := rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+			return nil, fmt.Errorf("scan author by letter: %w", err)
+		}
 		authors = append(authors, a)
 	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate authors by letter: %w", err)
 	}
 
 	return authors, nil
@@ -262,13 +270,13 @@ func (r *Repo) GetBooks() ([]string, error) {
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("query books: %w", err)
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("get book columns: %w", err)
 	}
 
 	books := make([]string, 0)
@@ -279,9 +287,8 @@ func (r *Repo) GetBooks() ([]string, error) {
 		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
-		err := rows.Scan(columnPointers...)
-		if err != nil {
-			log.Fatalf("GetBooks: %s", err)
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, fmt.Errorf("scan book: %w", err)
 		}
 		var sb strings.Builder
 		for i := range cols {
@@ -290,9 +297,8 @@ func (r *Repo) GetBooks() ([]string, error) {
 
 		books = append(books, sb.String())
 	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books: %w", err)
 	}
 
 	return books, nil
@@ -304,7 +310,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("query books by letter: %w", err)
 	}
 	defer rows.Close()
 
@@ -312,12 +318,13 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	for rows.Next() {
 		var a book.Book
 
-		rows.Scan(&a.Title)
+		if err := rows.Scan(&a.Title); err != nil {
+			return nil, fmt.Errorf("scan book by letter: %w", err)
+		}
 		books = append(books, a)
 	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books by letter: %w", err)
 	}
 
 	return books, nil
@@ -325,23 +332,23 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 func (r *Repo) GetBooksByAuthorID(id int64) ([]string, error) {
 	QUERY := `
 SELECT *
-FROM books 
-LEFT JOIN book_authors 
-ON books.book_id = book_authors.book_id 
+FROM books
+LEFT JOIN book_authors
+ON books.book_id = book_authors.book_id
 LEFT JOIN authors
 ON book_authors.author_id = authors.author_id
 WHERE author_id=?
 `
 
-	rows, err := r.db.Query(QUERY)
+	rows, err := r.db.Query(QUERY, id)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("query books by author id: %w", err)
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("get book columns by author id: %w", err)
 	}
 
 	books := make([]string, 0)
@@ -352,9 +359,8 @@ WHERE author_id=?
 		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
-		err := rows.Scan(columnPointers...)
-		if err != nil {
-			log.Fatalf("GetBooks: %s", err)
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, fmt.Errorf("scan book by author id: %w", err)
 		}
 		var sb strings.Builder
 		for i := range cols {
@@ -363,9 +369,8 @@ WHERE author_id=?
 
 		books = append(books, sb.String())
 	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books by author id: %w", err)
 	}
 
 	return books, nil

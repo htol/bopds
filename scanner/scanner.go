@@ -112,7 +112,7 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
 		if err != nil {
-			log.Fatalf("Failed to open: %s", err)
+			return fmt.Errorf("open zip %s: %w", file, err)
 		}
 		defer arch.Close()
 
@@ -223,7 +223,7 @@ func checkFilesContent(files []string) error {
 			//log.Println("archive found")
 			arch, err := zip.OpenReader(file)
 			if err != nil {
-				log.Fatalf("Failed to open: %s", err)
+				return fmt.Errorf("open zip %s: %w", file, err)
 			}
 			defer arch.Close()
 
