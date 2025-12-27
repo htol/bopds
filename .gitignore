@@ -1,7 +1,7 @@
 lib/*
 tmp/*
 bopds
-books.db
+*.db
 books.db-shm
 books.db-wal
 go.sum
