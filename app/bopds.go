@@ -1,3 +1,4 @@
+// Package app is the main cmd app
 package app
 
 import (
@@ -11,7 +12,27 @@ import (
 	"github.com/htol/bopds/scanner"
 )
 
-var storage *repo.Repo
+type Server struct {
+	storage     *repo.Repo
+	server      *http.Server
+	portNumber  int
+	libraryPath string
+}
+
+func NewServer(portNumber int, libraryPath string, storage *repo.Repo) *Server {
+	return &Server{
+		storage:     storage,
+		portNumber:  portNumber,
+		libraryPath: libraryPath,
+	}
+}
+
+func (s *Server) Close() error {
+	if s.storage != nil {
+		s.storage.Close()
+	}
+	return nil
+}
 
 // respondWithError logs an error and sends an HTTP error response
 func respondWithError(w http.ResponseWriter, message string, err error, statusCode int) {
@@ -38,6 +59,7 @@ type appEnv struct {
 	portNumber  int
 	libraryPath string
 	cmd         string
+	storage     *repo.Repo
 }
 
 func (app *appEnv) fromArgs(args []string) error {
@@ -61,21 +83,19 @@ func (app *appEnv) fromArgs(args []string) error {
 }
 
 func (app *appEnv) run() error {
+	storage := repo.GetStorage("books.db")
+	defer storage.Close()
+
 	switch app.cmd {
 	case "scan":
-		storage := repo.GetStorage("books.db")
-		defer storage.Close()
 		if err := scanner.ScanLibrary(app.libraryPath, storage); err != nil {
 			return err
 		}
 	case "serve":
-		storage = repo.GetStorage("books.db")
-		defer storage.Close()
+		app.storage = storage
 		log.Printf("local access http://localhost:%d\n", app.portNumber)
 		app.serve()
 	case "init":
-		storage = repo.GetStorage("books.db")
-		defer storage.Close()
 	default:
 		return fmt.Errorf("unknown command %s", app.cmd)
 	}
@@ -84,18 +104,18 @@ func (app *appEnv) run() error {
 
 func (app *appEnv) serve() {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", app.portNumber),
-		Handler: router(),
+		Handler: router(app.storage),
 	}
 	srv.ListenAndServe()
 }
 
-func router() http.Handler {
+func router(storage *repo.Repo) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", indexHandler())
-	mux.HandleFunc("/a", getAuthors)
-	mux.HandleFunc("/b", getBooks)
-	mux.Handle("/api/authors", withCORS(getAuthorsByLetter()))
-	mux.Handle("/api/books", withCORS(getBooksByLetter()))
+	mux.HandleFunc("/a", getAuthorsHandler(storage))
+	mux.HandleFunc("/b", getBooksHandler(storage))
+	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(storage)))
+	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(storage)))
 	return mux
 }
 
@@ -103,18 +123,20 @@ func indexHandler() http.Handler {
 	return http.FileServer(http.Dir("./frontend/dist"))
 }
 
-func getAuthors(w http.ResponseWriter, r *http.Request) {
-	authors, err := storage.GetAuthors()
-	if err != nil {
-		respondWithError(w, "Failed to get authors", err, http.StatusInternalServerError)
-		return
-	}
-	for _, author := range authors {
-		fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
+func getAuthorsHandler(storage *repo.Repo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authors, err := storage.GetAuthors()
+		if err != nil {
+			respondWithError(w, "Failed to get authors", err, http.StatusInternalServerError)
+			return
+		}
+		for _, author := range authors {
+			fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
+		}
 	}
 }
 
-func getAuthorsByLetter() http.Handler {
+func getAuthorsByLetterHandler(storage *repo.Repo) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
@@ -126,28 +148,27 @@ func getAuthorsByLetter() http.Handler {
 			respondWithError(w, "Failed to get authors by letter", err, http.StatusInternalServerError)
 			return
 		}
-		/* for _, author := range authors {
-			fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
-		} */
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(authors)
 	}
 	return http.HandlerFunc(hf)
 }
 
-func getBooks(w http.ResponseWriter, r *http.Request) {
-	books, err := storage.GetBooks()
-	if err != nil {
-		respondWithError(w, "Failed to get books", err, http.StatusInternalServerError)
-		return
-	}
+func getBooksHandler(storage *repo.Repo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		books, err := storage.GetBooks()
+		if err != nil {
+			respondWithError(w, "Failed to get books", err, http.StatusInternalServerError)
+			return
+		}
 
-	for _, book := range books {
-		fmt.Fprintf(w, "%s\n", book)
+		for _, book := range books {
+			fmt.Fprintf(w, "%s\n", book)
+		}
 	}
 }
 
-func getBooksByLetter() http.Handler {
+func getBooksByLetterHandler(storage *repo.Repo) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
