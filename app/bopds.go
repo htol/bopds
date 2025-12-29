@@ -2,10 +2,14 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/htol/bopds/config"
@@ -69,6 +73,7 @@ type appEnv struct {
 	cmd         string
 	storage     *repo.Repo
 	service     *service.Service
+	shutdownCtx context.Context
 }
 
 func (app *appEnv) fromArgs(args []string) error {
@@ -106,23 +111,27 @@ func (app *appEnv) run() error {
 	logger.Init(app.config.LogLevel)
 
 	storage := repo.GetStorage(app.config.Database.Path)
-	defer func() {
-		if err := storage.Close(); err != nil {
-			logger.Error("Error closing storage", "error", err)
-		}
-	}()
 
 	switch app.cmd {
 	case "scan":
+		defer func() {
+			if err := storage.Close(); err != nil {
+				logger.Error("Error closing storage", "error", err)
+			}
+		}()
 		if err := scanner.ScanLibrary(app.libraryPath, storage); err != nil {
 			return err
 		}
 	case "serve":
 		app.storage = storage
 		app.service = service.New(storage)
-		logger.Info("Starting server", "port", app.config.Server.Port, "url", fmt.Sprintf("http://localhost:%d", app.config.Server.Port))
 		app.serve()
 	case "init":
+		defer func() {
+			if err := storage.Close(); err != nil {
+				logger.Error("Error closing storage", "error", err)
+			}
+		}()
 	default:
 		return fmt.Errorf("unknown command %s", app.cmd)
 	}
@@ -130,6 +139,12 @@ func (app *appEnv) run() error {
 }
 
 func (app *appEnv) serve() {
+	// Create shutdown context with timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	app.shutdownCtx = shutdownCtx
+
+	// Create server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", app.config.Server.Port),
 		Handler:      router(app.service),
@@ -137,7 +152,45 @@ func (app *appEnv) serve() {
 		WriteTimeout: time.Duration(app.config.Server.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(app.config.Server.IdleTimeout) * time.Second,
 	}
-	srv.ListenAndServe()
+	app.server = srv
+
+	// Start server in a goroutine
+	serverErrors := make(chan error, 1)
+	go func() {
+		logger.Info("Server listening", "port", app.config.Server.Port, "url", fmt.Sprintf("http://localhost:%d", app.config.Server.Port))
+		serverErrors <- srv.ListenAndServe()
+	}()
+
+	// Wait for interrupt signal
+	shutdownSignal := make(chan os.Signal, 1)
+	signal.Notify(shutdownSignal, syscall.SIGINT, syscall.SIGTERM)
+
+	// Block until we receive a signal or server errors
+	select {
+	case err := <-serverErrors:
+		// Server failed to start
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("Server error", "error", err)
+		}
+		return
+	case sig := <-shutdownSignal:
+		// Received shutdown signal
+		logger.Info("Received shutdown signal", "signal", sig.String())
+
+		// Initiate graceful shutdown
+		logger.Info("Shutting down server...")
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Server shutdown error", "error", err)
+		}
+
+		// Close database connection
+		logger.Info("Closing database connection...")
+		if err := app.storage.Close(); err != nil {
+			logger.Error("Error closing storage", "error", err)
+		}
+
+		logger.Info("Server stopped")
+	}
 }
 
 func router(svc *service.Service) http.Handler {
