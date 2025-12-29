@@ -3,10 +3,12 @@ package repo
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
+	"time"
 
 	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/config"
+	"github.com/htol/bopds/logger"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -22,7 +24,10 @@ type Repo struct {
 var _ Repository = (*Repo)(nil)
 
 func GetStorage(path string) *Repo {
-	// TODO: parametrize path for sqllitedb
+	return GetStorageWithConfig(path, config.Load())
+}
+
+func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	r := &Repo{
 		path:         path,
 		AuthorsCache: make(map[book.Author]int64),
@@ -32,9 +37,15 @@ func GetStorage(path string) *Repo {
 
 	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("Failed to open database", "path", r.path, "error", err)
+		panic(err)
 	}
-	db.SetMaxOpenConns(1)
+
+	// Configure connection pool from config
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetime) * time.Second)
+
 	r.db = db
 
 	// TODO: Drop indexes
@@ -83,11 +94,13 @@ func GetStorage(path string) *Repo {
 	    `
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
-		log.Fatalf("%q: %s\n", err, sqlStmt)
+		logger.Error("Failed to execute schema", "error", err)
+		panic(err)
 	}
 
 	if err := r.initAuthorsCache(); err != nil {
-		log.Fatalf("init authors cache: %v", err)
+		logger.Error("Failed to initialize authors cache", "error", err)
+		panic(err)
 	}
 
 	return r

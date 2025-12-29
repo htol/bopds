@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
+	"time"
 
+	"github.com/htol/bopds/config"
+	"github.com/htol/bopds/logger"
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
 	"github.com/htol/bopds/service"
@@ -17,15 +19,15 @@ type Server struct {
 	storage     *repo.Repo
 	service     *service.Service
 	server      *http.Server
-	portNumber  int
+	config      *config.Config
 	libraryPath string
 }
 
-func NewServer(portNumber int, libraryPath string, storage *repo.Repo) *Server {
+func NewServer(libraryPath string, storage *repo.Repo, cfg *config.Config) *Server {
 	return &Server{
 		storage:     storage,
 		service:     service.New(storage),
-		portNumber:  portNumber,
+		config:      cfg,
 		libraryPath: libraryPath,
 	}
 }
@@ -41,19 +43,19 @@ func (s *Server) Close() error {
 
 // respondWithError logs an error and sends an HTTP error response
 func respondWithError(w http.ResponseWriter, message string, err error, statusCode int) {
-	log.Printf("%s: %v", message, err)
+	logger.Error(message, "error", err, "status", statusCode)
 	http.Error(w, message, statusCode)
 }
 
 func CLI(args []string) int {
 	var app appEnv
 	if err := app.fromArgs(args); err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		return 2
 	}
 
 	if err := app.run(); err != nil {
-		log.Printf("Runtime error: %v\n", err)
+		logger.Error("Runtime error", "error", err)
 		return 1
 	}
 	return 0
@@ -61,7 +63,7 @@ func CLI(args []string) int {
 
 type appEnv struct {
 	server      *http.Server
-	portNumber  int
+	config      *config.Config
 	libraryPath string
 	cmd         string
 	storage     *repo.Repo
@@ -71,8 +73,15 @@ type appEnv struct {
 func (app *appEnv) fromArgs(args []string) error {
 	fl := flag.NewFlagSet("bopds", flag.ContinueOnError)
 
-	fl.IntVar(&app.portNumber, "p", 3001, "Port number (default 3001)")
-	fl.StringVar(&app.libraryPath, "l", "./lib", "Path to library (default ./lib)")
+	// Load default config
+	cfg := config.Load()
+
+	// CLI flags override environment variables
+	port := cfg.Server.Port
+	libPath := cfg.Library.Path
+
+	fl.IntVar(&port, "p", cfg.Server.Port, "Port number")
+	fl.StringVar(&libPath, "l", cfg.Library.Path, "Path to library")
 
 	if err := fl.Parse(args); err != nil {
 		fl.Usage()
@@ -84,15 +93,21 @@ func (app *appEnv) fromArgs(args []string) error {
 	}
 
 	app.cmd = fl.Arg(0)
+	app.libraryPath = libPath
+	app.config = cfg
+	app.config.Server.Port = port
 
 	return nil
 }
 
 func (app *appEnv) run() error {
-	storage := repo.GetStorage("books.db")
+	// Initialize logger
+	logger.Init(app.config.LogLevel)
+
+	storage := repo.GetStorage(app.config.Database.Path)
 	defer func() {
 		if err := storage.Close(); err != nil {
-			log.Printf("Error closing storage: %v", err)
+			logger.Error("Error closing storage", "error", err)
 		}
 	}()
 
@@ -104,7 +119,7 @@ func (app *appEnv) run() error {
 	case "serve":
 		app.storage = storage
 		app.service = service.New(storage)
-		log.Printf("local access http://localhost:%d\n", app.portNumber)
+		logger.Info("Starting server", "port", app.config.Server.Port, "url", fmt.Sprintf("http://localhost:%d", app.config.Server.Port))
 		app.serve()
 	case "init":
 	default:
@@ -114,8 +129,12 @@ func (app *appEnv) run() error {
 }
 
 func (app *appEnv) serve() {
-	srv := &http.Server{Addr: fmt.Sprintf(":%d", app.portNumber),
-		Handler: router(app.service),
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", app.config.Server.Port),
+		Handler:      router(app.service),
+		ReadTimeout:  time.Duration(app.config.Server.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(app.config.Server.WriteTimeout) * time.Second,
+		IdleTimeout:  time.Duration(app.config.Server.IdleTimeout) * time.Second,
 	}
 	srv.ListenAndServe()
 }
