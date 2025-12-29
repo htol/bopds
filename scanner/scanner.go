@@ -108,6 +108,7 @@ func ScanLibrary(basedir string, storage Storager) error {
 }
 
 func checkInpxFiles(ctx context.Context, basedir string, files []string, entries chan<- *book.Book) error {
+	defer close(entries)
 
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
@@ -156,8 +157,6 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 			if err := scanner.Err(); err != nil {
 				log.Printf("Scanner error on %s: %s", archiveEntry.Name, err)
 			}
-			defer close(entries)
-
 		}
 	}
 	return nil
