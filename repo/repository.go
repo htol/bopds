@@ -9,6 +9,9 @@ type Repository interface {
 	// Close closes the database connection
 	Close() error
 
+	// Health check
+	Ping() error
+
 	// Authors
 	GetAuthors() ([]book.Author, error)
 	GetAuthorsByLetter(letters string) ([]book.Author, error)

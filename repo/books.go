@@ -110,6 +110,11 @@ func (r *Repo) Close() error {
 	return r.db.Close()
 }
 
+// Ping checks if the database connection is alive
+func (r *Repo) Ping() error {
+	return r.db.Ping()
+}
+
 func (r *Repo) initAuthorsCache() error {
 	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors`
 

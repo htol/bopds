@@ -99,3 +99,13 @@ func (s *Service) AddBook(ctx context.Context, book *book.Book) error {
 	}
 	return nil
 }
+
+// Health
+
+// Ping checks the health of the service and its dependencies
+func (s *Service) Ping(ctx context.Context) error {
+	if err := s.repo.Ping(); err != nil {
+		return fmt.Errorf("repository ping: %w", err)
+	}
+	return nil
+}

@@ -148,6 +148,7 @@ func router(svc *service.Service) http.Handler {
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
+	mux.HandleFunc("/health", healthCheckHandler(svc))
 
 	// Apply middleware chain
 	chain := middleware.Chain(
@@ -253,4 +254,27 @@ func withCORS(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func healthCheckHandler(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		// Check service health (database connection via service layer)
+		if err := svc.Ping(ctx); err != nil {
+			logger.Error("Health check failed", "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "unhealthy",
+				"error":  "service unavailable",
+			})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "healthy",
+		})
+	}
 }
