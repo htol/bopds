@@ -46,10 +46,24 @@ func (s *Server) Close() error {
 	return nil
 }
 
-// respondWithError logs an error and sends an HTTP error response
+// respondWithError logs an error and sends an HTTP error response as JSON
 func respondWithError(w http.ResponseWriter, message string, err error, statusCode int) {
 	logger.Error(message, "error", err, "status", statusCode)
-	http.Error(w, message, statusCode)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": message,
+	})
+}
+
+// respondWithValidationError sends a validation error response as JSON
+func respondWithValidationError(w http.ResponseWriter, message string) {
+	logger.Warn("Validation error", "message", message)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": message,
+	})
 }
 
 func CLI(args []string) int {
@@ -235,7 +249,7 @@ func getAuthorsByLetterHandler(svc *service.Service) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
-			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
+			respondWithValidationError(w, "missing 'startsWith' query parameter")
 			return
 		}
 		ctx := r.Context()
@@ -269,7 +283,7 @@ func getBooksByLetterHandler(svc *service.Service) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
-			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
+			respondWithValidationError(w, "missing 'startsWith' query parameter")
 			return
 		}
 		ctx := r.Context()
@@ -315,17 +329,12 @@ func healthCheckHandler(svc *service.Service) http.HandlerFunc {
 
 		// Check service health (database connection via service layer)
 		if err := svc.Ping(ctx); err != nil {
-			logger.Error("Health check failed", "error", err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{
-				"status": "unhealthy",
-				"error":  "service unavailable",
-			})
+			respondWithError(w, "service unavailable", err, http.StatusServiceUnavailable)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status": "healthy",
 		})
