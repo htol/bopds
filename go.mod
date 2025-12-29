@@ -10,4 +10,7 @@ require (
 	golang.org/x/sync v0.15.0
 )
 
-require golang.org/x/text v0.3.6 // indirect
+require (
+	github.com/google/uuid v1.6.0 // indirect
+	golang.org/x/text v0.3.6 // indirect
+)

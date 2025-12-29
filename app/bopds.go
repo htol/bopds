@@ -10,6 +10,7 @@ import (
 
 	"github.com/htol/bopds/config"
 	"github.com/htol/bopds/logger"
+	"github.com/htol/bopds/middleware"
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
 	"github.com/htol/bopds/service"
@@ -147,7 +148,15 @@ func router(svc *service.Service) http.Handler {
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
-	return mux
+
+	// Apply middleware chain
+	chain := middleware.Chain(
+		middleware.Recovery,
+		middleware.Logger,
+		middleware.RequestID,
+	)
+
+	return chain(mux)
 }
 
 func indexHandler() http.Handler {
