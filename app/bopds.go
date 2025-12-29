@@ -29,7 +29,9 @@ func NewServer(portNumber int, libraryPath string, storage *repo.Repo) *Server {
 
 func (s *Server) Close() error {
 	if s.storage != nil {
-		s.storage.Close()
+		if err := s.storage.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -84,7 +86,11 @@ func (app *appEnv) fromArgs(args []string) error {
 
 func (app *appEnv) run() error {
 	storage := repo.GetStorage("books.db")
-	defer storage.Close()
+	defer func() {
+		if err := storage.Close(); err != nil {
+			log.Printf("Error closing storage: %v", err)
+		}
+	}()
 
 	switch app.cmd {
 	case "scan":

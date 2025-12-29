@@ -18,6 +18,9 @@ type Repo struct {
 	//authorsSeq   uint
 }
 
+// Ensure Repo implements Repository interface
+var _ Repository = (*Repo)(nil)
+
 func GetStorage(path string) *Repo {
 	// TODO: parametrize path for sqllitedb
 	r := &Repo{
@@ -77,8 +80,8 @@ func GetStorage(path string) *Repo {
 	return r
 }
 
-func (r *Repo) Close() {
-	r.db.Close()
+func (r *Repo) Close() error {
+	return r.db.Close()
 }
 
 func (r *Repo) initAuthorsCache() error {
