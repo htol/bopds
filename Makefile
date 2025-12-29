@@ -1,6 +1,9 @@
-.PHONY: frontend build test init scan serve
+.PHONY: frontend build test init scan serve clean
 
 all: build
+
+clean:
+	rm -f books.db books.db.backup books.db-wal books.db-shm
 
 frontend:
 	cd frontend; npm run build
@@ -11,12 +14,12 @@ build: frontend
 test:
 	go test ./...
 
-init: build
-	rm -f ./books.db; ./bopds init;	ls -alsh books.db
+init: build clean
+	./bopds init; ls -alsh books.db
 
 scan: build init
 	bash -c "time ./bopds scan"
 	ls -alsh books.db
 
-serve: build 
+serve: build
 	./bopds serve

@@ -122,6 +122,7 @@ func router(storage *repo.Repo) http.Handler {
 	mux.HandleFunc("/b", getBooksHandler(storage))
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(storage)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(storage)))
+	mux.Handle("/api/genres", withCORS(getGenresHandler(storage)))
 	return mux
 }
 
@@ -190,6 +191,18 @@ func getBooksByLetterHandler(storage *repo.Repo) http.Handler {
 		json.NewEncoder(w).Encode(books)
 	}
 	return http.HandlerFunc(hf)
+}
+
+func getGenresHandler(storage *repo.Repo) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		genres, err := storage.GetGenres()
+		if err != nil {
+			respondWithError(w, "Failed to get genres", err, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(genres)
+	})
 }
 
 func withCORS(h http.Handler) http.Handler {

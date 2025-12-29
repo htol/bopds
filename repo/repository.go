@@ -18,6 +18,9 @@ type Repository interface {
 	GetBooksByLetter(letters string) ([]book.Book, error)
 	GetBooksByAuthorID(id int64) ([]string, error)
 
+	// Genres
+	GetGenres() ([]string, error)
+
 	// Write operations
 	Add(record *book.Book) error
 	Search() error

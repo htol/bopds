@@ -136,18 +136,25 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 			defer content.Close()
 
 			scanner := bufio.NewScanner(content)
-			entrySeparator := []rune{4}
+			fieldSeparator := []rune{4}
 			for scanner.Scan() {
-				inpEntry := strings.Split(scanner.Text(), string(entrySeparator))
-				//fmt.Printf("%#v\n", inpEntry)
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
+				}
+				inpEntry := strings.Split(line, string(fieldSeparator))
 				bookEntry := parseInpEntry(inpEntry)
 				bookEntry.Archive = libArchiveFile
-				//fmt.Printf("%#v\n", bookEntry)
-				select {
-				case entries <- bookEntry:
-				case <-ctx.Done():
-					return ctx.Err()
+				if bookEntry.Title != "" {
+					select {
+					case entries <- bookEntry:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Printf("Scanner error on %s: %s", archiveEntry.Name, err)
 			}
 			defer close(entries)
 

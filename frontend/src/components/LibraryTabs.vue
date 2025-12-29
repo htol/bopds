@@ -17,7 +17,7 @@
 import { ref, computed } from 'vue'
 
 import AuthorsView from '@/components/AuthorsView.vue'
-// import GenresView from '@/components/GenresView.vue'
+import GenresView from '@/components/GenresView.vue'
 import BooksView from '@/components/BooksView.vue'
 
 const tabs = ['Авторы', 'Жанры', 'Книги']

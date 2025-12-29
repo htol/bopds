@@ -67,6 +67,19 @@ func GetStorage(path string) *Repo {
            );
            CREATE INDEX IF NOT EXISTS [I_book_id] ON "book_authors" ([book_id]);
            CREATE INDEX IF NOT EXISTS [I_author_id] ON "book_authors" ([author_id]);
+
+           CREATE TABLE IF NOT EXISTS "genres" (
+               genre_id integer primary key autoincrement not null,
+               name text unique not null
+           );
+
+           CREATE TABLE IF NOT EXISTS "book_genres" (
+               book_id INTEGER NOT NULL,
+               genre_id INTEGER NOT NULL,
+               PRIMARY KEY (book_id, genre_id),
+               FOREIGN KEY (book_id) REFERENCES books(book_id),
+               FOREIGN KEY (genre_id) REFERENCES genres(genre_id)
+           );
 	    `
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
@@ -144,6 +157,58 @@ func (r *Repo) Add(record *book.Book) error {
 		if _, err := stmt.Exec(bookID, author); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("insert book_author: %w", err)
+		}
+	}
+
+	if len(record.Genres) > 0 {
+		getGenreStmt, err := tx.Prepare(`SELECT genre_id FROM genres WHERE name = ?`)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("prepare get genre: %w", err)
+		}
+		defer getGenreStmt.Close()
+
+		insertGenreStmt, err := tx.Prepare(`INSERT INTO genres(name) VALUES(?)`)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("prepare insert genre: %w", err)
+		}
+		defer insertGenreStmt.Close()
+
+		bookGenreStmt, err := tx.Prepare(`INSERT OR IGNORE INTO book_genres(book_id, genre_id) VALUES(?, ?)`)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("prepare book_genre: %w", err)
+		}
+		defer bookGenreStmt.Close()
+
+		for _, genre := range record.Genres {
+			if genre == "" {
+				continue
+			}
+
+			var genreID int64
+			err := getGenreStmt.QueryRow(genre).Scan(&genreID)
+			if err == sql.ErrNoRows {
+				result, err := insertGenreStmt.Exec(genre)
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("insert genre: %w", err)
+				}
+				genreID, err = result.LastInsertId()
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("get genre id: %w", err)
+				}
+			} else if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("get genre id: %w", err)
+			}
+
+			if _, err := bookGenreStmt.Exec(bookID, genreID); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("insert book_genre: %w", err)
+			}
 		}
 	}
 
@@ -377,4 +442,28 @@ WHERE author_id=?
 	}
 
 	return books, nil
+}
+
+func (r *Repo) GetGenres() ([]string, error) {
+	QUERY := `SELECT name FROM genres ORDER BY name`
+
+	rows, err := r.db.Query(QUERY)
+	if err != nil {
+		return nil, fmt.Errorf("query genres: %w", err)
+	}
+	defer rows.Close()
+
+	genres := make([]string, 0)
+	for rows.Next() {
+		var genre string
+		if err := rows.Scan(&genre); err != nil {
+			return nil, fmt.Errorf("scan genre: %w", err)
+		}
+		genres = append(genres, genre)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate genres: %w", err)
+	}
+
+	return genres, nil
 }
