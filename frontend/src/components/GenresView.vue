@@ -20,6 +20,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { api } from '@/api'
 
 const genres = ref([])
 const isLoading = ref(false)
@@ -27,10 +28,7 @@ const isLoading = ref(false)
 const fetchGenres = async () => {
     isLoading.value = true
     try {
-        const res = await fetch('http://localhost:3001/api/genres')
-        if (!res.ok) throw new Error(res.statusText)
-        const data = await res.json()
-        genres.value = data
+        genres.value = await api.getGenres()
     } catch (err) {
         console.error('Ошибка загрузки жанров:', err)
         genres.value = []

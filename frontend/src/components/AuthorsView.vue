@@ -38,6 +38,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AlphabetsFilter from '@/components/AlphabetsFilter.vue'
 import Paginator from '@/components/Paginator.vue'
 import SearchInput from '@/components/SearchInput.vue'
+import { api } from '@/api'
 
 const authors = ref([])
 const selectedLetter = ref('А')
@@ -70,10 +71,7 @@ const filteredAuthors = computed(() => {
 const fetchAuthors = async () => {
     isLoading.value = true
     try {
-        const res = await fetch(`http://localhost:3001/api/authors?startsWith=${selectedLetter.value}`)
-        if (!res.ok) throw new Error(res.statusText)
-        const data = await res.json()
-        authors.value = data
+        authors.value = await api.getAuthors(selectedLetter.value)
         currentPage.value = 1
     } catch (err) {
         console.error('Ошибка загрузки авторов:', err)

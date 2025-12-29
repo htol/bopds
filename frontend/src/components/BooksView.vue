@@ -38,6 +38,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AlphabetsFilter from '@/components/AlphabetsFilter.vue'
 import Paginator from '@/components/Paginator.vue'
 import SearchInput from '@/components/SearchInput.vue'
+import { api } from '@/api'
 
 const books = ref([])
 const selectedLetter = ref('А')
@@ -67,10 +68,7 @@ const filteredBooks = computed(() => {
 const fetchBooks = async () => {
     isLoading.value = true
     try {
-        const res = await fetch(`http://localhost:3001/api/books?startsWith=${selectedLetter.value}`)
-        if (!res.ok) throw new Error(res.statusText)
-        const data = await res.json()
-        books.value = data
+        books.value = await api.getBooks(selectedLetter.value)
         currentPage.value = 1
     } catch (err) {
         console.error('Ошибка загрузки книг:', err)
