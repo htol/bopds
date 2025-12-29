@@ -10,10 +10,12 @@ import (
 
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/scanner"
+	"github.com/htol/bopds/service"
 )
 
 type Server struct {
 	storage     *repo.Repo
+	service     *service.Service
 	server      *http.Server
 	portNumber  int
 	libraryPath string
@@ -22,6 +24,7 @@ type Server struct {
 func NewServer(portNumber int, libraryPath string, storage *repo.Repo) *Server {
 	return &Server{
 		storage:     storage,
+		service:     service.New(storage),
 		portNumber:  portNumber,
 		libraryPath: libraryPath,
 	}
@@ -62,6 +65,7 @@ type appEnv struct {
 	libraryPath string
 	cmd         string
 	storage     *repo.Repo
+	service     *service.Service
 }
 
 func (app *appEnv) fromArgs(args []string) error {
@@ -99,6 +103,7 @@ func (app *appEnv) run() error {
 		}
 	case "serve":
 		app.storage = storage
+		app.service = service.New(storage)
 		log.Printf("local access http://localhost:%d\n", app.portNumber)
 		app.serve()
 	case "init":
@@ -110,19 +115,19 @@ func (app *appEnv) run() error {
 
 func (app *appEnv) serve() {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", app.portNumber),
-		Handler: router(app.storage),
+		Handler: router(app.service),
 	}
 	srv.ListenAndServe()
 }
 
-func router(storage *repo.Repo) http.Handler {
+func router(svc *service.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", indexHandler())
-	mux.HandleFunc("/a", getAuthorsHandler(storage))
-	mux.HandleFunc("/b", getBooksHandler(storage))
-	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(storage)))
-	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(storage)))
-	mux.Handle("/api/genres", withCORS(getGenresHandler(storage)))
+	mux.HandleFunc("/a", getAuthorsHandler(svc))
+	mux.HandleFunc("/b", getBooksHandler(svc))
+	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
+	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
+	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
 	return mux
 }
 
@@ -130,27 +135,29 @@ func indexHandler() http.Handler {
 	return http.FileServer(http.Dir("./frontend/dist"))
 }
 
-func getAuthorsHandler(storage *repo.Repo) http.HandlerFunc {
+func getAuthorsHandler(svc *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authors, err := storage.GetAuthors()
+		ctx := r.Context()
+		authors, err := svc.GetAuthors(ctx)
 		if err != nil {
 			respondWithError(w, "Failed to get authors", err, http.StatusInternalServerError)
 			return
 		}
 		for _, author := range authors {
-			fmt.Fprintf(w, "%d: %s, %s, %s\n", storage.AuthorsCache[author], author.FirstName, author.MiddleName, author.LastName)
+			fmt.Fprintf(w, "%s, %s, %s\n", author.FirstName, author.MiddleName, author.LastName)
 		}
 	}
 }
 
-func getAuthorsByLetterHandler(storage *repo.Repo) http.Handler {
+func getAuthorsByLetterHandler(svc *service.Service) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
 			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
 			return
 		}
-		authors, err := storage.GetAuthorsByLetter(letters)
+		ctx := r.Context()
+		authors, err := svc.GetAuthorsByLetter(ctx, letters)
 		if err != nil {
 			respondWithError(w, "Failed to get authors by letter", err, http.StatusInternalServerError)
 			return
@@ -161,9 +168,10 @@ func getAuthorsByLetterHandler(storage *repo.Repo) http.Handler {
 	return http.HandlerFunc(hf)
 }
 
-func getBooksHandler(storage *repo.Repo) http.HandlerFunc {
+func getBooksHandler(svc *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		books, err := storage.GetBooks()
+		ctx := r.Context()
+		books, err := svc.GetBooks(ctx)
 		if err != nil {
 			respondWithError(w, "Failed to get books", err, http.StatusInternalServerError)
 			return
@@ -175,14 +183,15 @@ func getBooksHandler(storage *repo.Repo) http.HandlerFunc {
 	}
 }
 
-func getBooksByLetterHandler(storage *repo.Repo) http.Handler {
+func getBooksByLetterHandler(svc *service.Service) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		letters := r.URL.Query().Get("startsWith")
 		if letters == "" {
 			http.Error(w, "missing 'startsWith' query parameter", http.StatusBadRequest)
 			return
 		}
-		books, err := storage.GetBooksByLetter(letters)
+		ctx := r.Context()
+		books, err := svc.GetBooksByLetter(ctx, letters)
 		if err != nil {
 			respondWithError(w, "Failed to get books by letter", err, http.StatusInternalServerError)
 			return
@@ -193,9 +202,10 @@ func getBooksByLetterHandler(storage *repo.Repo) http.Handler {
 	return http.HandlerFunc(hf)
 }
 
-func getGenresHandler(storage *repo.Repo) http.Handler {
+func getGenresHandler(svc *service.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		genres, err := storage.GetGenres()
+		ctx := r.Context()
+		genres, err := svc.GetGenres(ctx)
 		if err != nil {
 			respondWithError(w, "Failed to get genres", err, http.StatusInternalServerError)
 			return

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/htol/bopds/repo"
+	"github.com/htol/bopds/service"
 )
 
 func TestGetAuthorsByLetter_MissingParameter(t *testing.T) {
@@ -18,7 +19,8 @@ func TestGetAuthorsByLetter_MissingParameter(t *testing.T) {
 			t.Logf("Error closing storage: %v", err)
 		}
 	}()
-	handler := getAuthorsByLetterHandler(storage)
+	svc := service.New(storage)
+	handler := getAuthorsByLetterHandler(svc)
 	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
@@ -41,7 +43,8 @@ func TestGetBooksByLetter_MissingParameter(t *testing.T) {
 			t.Logf("Error closing storage: %v", err)
 		}
 	}()
-	handler := getBooksByLetterHandler(storage)
+	svc := service.New(storage)
+	handler := getBooksByLetterHandler(svc)
 	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
