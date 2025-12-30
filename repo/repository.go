@@ -19,11 +19,14 @@ type Repository interface {
 	// Authors
 	GetAuthors() ([]book.Author, error)
 	GetAuthorsByLetter(letters string) ([]book.Author, error)
+	GetAuthorByID(id int64) (*book.Author, error)
+	GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, error)
+	GetAuthorsWithBookCountByLetter(letters string) ([]book.AuthorWithBookCount, error)
 
 	// Books
 	GetBooks() ([]string, error)
 	GetBooksByLetter(letters string) ([]book.Book, error)
-	GetBooksByAuthorID(id int64) ([]string, error)
+	GetBooksByAuthorID(id int64) ([]book.Book, error)
 	GetBookByID(id int64) (*book.Book, error)
 
 	// Genres

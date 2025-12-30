@@ -301,7 +301,7 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 }
 
 func (r *Repo) GetAuthors() ([]book.Author, error) {
-	QUERY := `SELECT first_name, middle_name, last_name FROM authors`
+	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -313,7 +313,7 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 	for rows.Next() {
 		var a book.Author
 
-		if err := rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+		if err := rows.Scan(&a.ID, &a.FirstName, &a.MiddleName, &a.LastName); err != nil {
 			return nil, fmt.Errorf("scan author: %w", err)
 		}
 		authors = append(authors, a)
@@ -327,7 +327,7 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 
 func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	pattern := strings.Title(letters) + "%"
-	QUERY := `SELECT first_name, middle_name, last_name FROM authors WHERE last_name LIKE ? COLLATE NOCASE ORDER BY last_name`
+	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors WHERE last_name LIKE ? COLLATE NOCASE ORDER BY last_name`
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
@@ -339,7 +339,7 @@ func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	for rows.Next() {
 		var a book.Author
 
-		if err := rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+		if err := rows.Scan(&a.ID, &a.FirstName, &a.MiddleName, &a.LastName); err != nil {
 			return nil, fmt.Errorf("scan author by letter: %w", err)
 		}
 		authors = append(authors, a)
@@ -349,6 +349,85 @@ func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	}
 
 	return authors, nil
+}
+
+func (r *Repo) GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, error) {
+	QUERY := `
+		SELECT a.author_id, a.first_name, a.middle_name, a.last_name,
+			   COUNT(ba.book_id) as book_count
+		FROM authors a
+		LEFT JOIN book_authors ba ON a.author_id = ba.author_id
+		GROUP BY a.author_id, a.first_name, a.middle_name, a.last_name
+		ORDER BY a.last_name
+	`
+
+	rows, err := r.db.Query(QUERY)
+	if err != nil {
+		return nil, fmt.Errorf("query authors with book count: %w", err)
+	}
+	defer rows.Close()
+
+	authors := make([]book.AuthorWithBookCount, 0)
+	for rows.Next() {
+		var a book.AuthorWithBookCount
+		if err := rows.Scan(&a.ID, &a.FirstName, &a.MiddleName, &a.LastName, &a.BookCount); err != nil {
+			return nil, fmt.Errorf("scan author with count: %w", err)
+		}
+		authors = append(authors, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate authors with count: %w", err)
+	}
+
+	return authors, nil
+}
+
+func (r *Repo) GetAuthorsWithBookCountByLetter(letters string) ([]book.AuthorWithBookCount, error) {
+	pattern := strings.Title(letters) + "%"
+	QUERY := `
+		SELECT a.author_id, a.first_name, a.middle_name, a.last_name,
+			   COUNT(ba.book_id) as book_count
+		FROM authors a
+		LEFT JOIN book_authors ba ON a.author_id = ba.author_id
+		WHERE a.last_name LIKE ? COLLATE NOCASE
+		GROUP BY a.author_id, a.first_name, a.middle_name, a.last_name
+		ORDER BY a.last_name
+	`
+
+	rows, err := r.db.Query(QUERY, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("query authors with book count by letter: %w", err)
+	}
+	defer rows.Close()
+
+	authors := make([]book.AuthorWithBookCount, 0)
+	for rows.Next() {
+		var a book.AuthorWithBookCount
+		if err := rows.Scan(&a.ID, &a.FirstName, &a.MiddleName, &a.LastName, &a.BookCount); err != nil {
+			return nil, fmt.Errorf("scan author with count: %w", err)
+		}
+		authors = append(authors, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate authors with count: %w", err)
+	}
+
+	return authors, nil
+}
+
+func (r *Repo) GetAuthorByID(id int64) (*book.Author, error) {
+	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors WHERE author_id = ?`
+
+	var a book.Author
+	err := r.db.QueryRow(QUERY, id).Scan(&a.ID, &a.FirstName, &a.MiddleName, &a.LastName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get author by ID %d: %w", id, err)
+	}
+
+	return &a, nil
 }
 
 func (r *Repo) GetBooks() ([]string, error) {
@@ -415,16 +494,16 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 
 	return books, nil
 }
-func (r *Repo) GetBooksByAuthorID(id int64) ([]string, error) {
+func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	QUERY := `
-SELECT *
-FROM books
-LEFT JOIN book_authors
-ON books.book_id = book_authors.book_id
-LEFT JOIN authors
-ON book_authors.author_id = authors.author_id
-WHERE author_id=?
-`
+		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
+			   a.first_name, a.middle_name, a.last_name
+		FROM books b
+		JOIN book_authors ba ON b.book_id = ba.book_id
+		LEFT JOIN authors a ON ba.author_id = a.author_id
+		WHERE ba.author_id = ?
+		ORDER BY b.title
+	`
 
 	rows, err := r.db.Query(QUERY, id)
 	if err != nil {
@@ -432,31 +511,46 @@ WHERE author_id=?
 	}
 	defer rows.Close()
 
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("get book columns by author id: %w", err)
-	}
-
-	books := make([]string, 0)
-
+	// Use map to collect books with multiple authors
+	booksMap := make(map[int64]*book.Book)
 	for rows.Next() {
-		columns := make([]sql.NullString, len(cols))
-		columnPointers := make([]interface{}, len(cols))
-		for i := range columns {
-			columnPointers[i] = &columns[i]
-		}
-		if err := rows.Scan(columnPointers...); err != nil {
+		var b book.Book
+		var author book.Author
+		var firstName, middleName, lastName sql.NullString
+
+		if err := rows.Scan(&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
+			&firstName, &middleName, &lastName); err != nil {
 			return nil, fmt.Errorf("scan book by author id: %w", err)
 		}
-		var sb strings.Builder
-		for i := range cols {
-			fmt.Fprintf(&sb, "%s, ", columns[i].String)
-		}
 
-		books = append(books, sb.String())
+		// Check if book already exists in map
+		if existingBook, ok := booksMap[b.BookID]; ok {
+			// Add author to existing book
+			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				existingBook.Author = append(existingBook.Author, author)
+			}
+		} else {
+			// Create new book entry
+			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				b.Author = []book.Author{author}
+			}
+			booksMap[b.BookID] = &b
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate books by author id: %w", err)
+	}
+
+	// Convert map to slice
+	books := make([]book.Book, 0, len(booksMap))
+	for _, book := range booksMap {
+		books = append(books, *book)
 	}
 
 	return books, nil
