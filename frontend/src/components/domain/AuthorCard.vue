@@ -52,12 +52,17 @@ const fullName = computed(() => {
 })
 
 const cardClasses = computed(() => {
-  return [
+  const classes = [
     'group', 'border', 'border-gray-200', 'bg-white', 'rounded-lg',
     'shadow-sm', 'transition-all', 'duration-200',
-    'hover:shadow-md', 'hover:-translate-y-0.5',
     'animate-snap-in', 'p-4'
   ]
+
+  if (props.clickable) {
+    classes.push('hover:shadow-md', 'hover:-translate-y-0.5', 'cursor-pointer')
+  }
+
+  return classes
 })
 
 const handleClick = () => {

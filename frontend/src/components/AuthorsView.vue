@@ -39,10 +39,12 @@
     <div v-else class="space-y-3 mb-8">
       <AuthorCard
         v-for="(author, index) in paginatedAuthors"
-        :key="author.id"
+        :key="author.ID"
         :author="author"
-        :clickable="false"
+        :book-count="author.BookCount"
+        :clickable="true"
         :style="{ animationDelay: `${index * 30}ms` }"
+        @click="handleAuthorClick"
       />
 
       <!-- Empty State -->
@@ -74,6 +76,10 @@ import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseBadge from '@/components/base/BaseBadge.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
 import { api } from '@/api'
+import { useLibraryStore } from '@/stores/libraryStore'
+
+const { setAuthorMode } = useLibraryStore()
+const emit = defineEmits(['show-author-books'])
 
 const authors = ref([])
 const selectedLetter = ref('А')
@@ -116,6 +122,11 @@ const fetchAuthors = async () => {
 const selectLetter = (letter) => {
   selectedLetter.value = letter
   fetchAuthors()
+}
+
+const handleAuthorClick = (author) => {
+  setAuthorMode(author)
+  emit('show-author-books', author)
 }
 
 onMounted(fetchAuthors)
