@@ -1,99 +1,123 @@
 <template>
-    <div class="p-6 max-w-3xl mx-auto">
-        <div class="grid justify-center">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-800">Алфавитный указатель фамилий авторов</h2>
-        </div>
-        <div class="grid p-6">
-            <AlphabetsFilter v-model:selectedAlphabet="alphabet" :selectedLetter="selectedLetter"
-                @select="selectLetter" />
-        </div>
+  <div class="p-6 max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="mb-6 border-b border-gray-200 pb-4">
+      <div class="flex justify-between items-start gap-4">
+        <h1 class="text-2xl font-display font-semibold text-gray-900">
+          Авторы
+        </h1>
+        <BaseBadge v-if="filteredAuthors.length" variant="accent" size="md">
+          {{ filteredAuthors.length }}
+        </BaseBadge>
+      </div>
+    </header>
 
-        <!-- Search -->
-        <SearchInput v-model="searchQuery" placeholder="Filter results..." @update:modelValue="currentPage = 1" />
+    <!-- Filter Section -->
+    <section class="mb-6">
+      <AlphabetsFilter
+        v-model:selectedAlphabet="alphabet"
+        :selectedLetter="selectedLetter"
+        @select="selectLetter"
+      />
+    </section>
 
-        <!-- Loader -->
-        <div v-if="isLoading" class="text-gray-500 italic mb-4">Loading..</div>
-
-        <!-- Authors -->
-        <div v-else>
-            <div v-if="paginatedAuthors.length" class="grid gap-3 mb-4">
-                <div v-for="author in paginatedAuthors" :key="author.id"
-                    class="p-2 bg-white rounded shadow-sm border border-gray-300">
-                    <p class="text-gray-800 font-medium">
-                        {{ author.FirstName }} {{ author.LastName }}
-                    </p>
-                </div>
-            </div>
-
-            <p v-else class="text-gray-500 italic">Empty result</p>
-        </div>
-
-        <!-- Paginator -->
-        <Paginator :total-items="filteredAuthors.length" v-model:currentPage="currentPage" :page-size="pageSize" />
+    <!-- Search -->
+    <div class="mb-8">
+      <SearchInput
+        v-model="searchQuery"
+        placeholder="Поиск по имени автора..."
+        @update:modelValue="currentPage = 1"
+      />
     </div>
+
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex justify-center py-16">
+      <BaseLoader type="skeleton-list" :count="5" />
+    </div>
+
+    <!-- Authors List -->
+    <div v-else class="space-y-3 mb-8">
+      <AuthorCard
+        v-for="(author, index) in paginatedAuthors"
+        :key="author.id"
+        :author="author"
+        :clickable="false"
+        :style="{ animationDelay: `${index * 30}ms` }"
+      />
+
+      <!-- Empty State -->
+      <EmptyState
+        v-if="paginatedAuthors.length === 0"
+        title="НЕТ АВТОРОВ"
+        :message="searchQuery ? 'Попробуйте изменить запрос' : 'Выберите другую букву алфавита'"
+        icon="∅"
+      />
+    </div>
+
+    <!-- Paginator -->
+    <Paginator
+      v-if="totalPages > 1"
+      :total-items="filteredAuthors.length"
+      v-model:currentPage="currentPage"
+      :page-size="pageSize"
+    />
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import AlphabetsFilter from '@/components/AlphabetsFilter.vue'
 import Paginator from '@/components/Paginator.vue'
 import SearchInput from '@/components/SearchInput.vue'
+import AuthorCard from '@/components/domain/AuthorCard.vue'
+import EmptyState from '@/components/domain/EmptyState.vue'
+import BaseBadge from '@/components/base/BaseBadge.vue'
+import BaseLoader from '@/components/base/BaseLoader.vue'
 import { api } from '@/api'
 
 const authors = ref([])
 const selectedLetter = ref('А')
-watch(selectedLetter, () => { Object.assign(searchQuery, ref('')) });
+const alphabet = ref('ru')
 const searchQuery = ref('')
 
 const isLoading = ref(false)
 
 const currentPage = ref(1)
 const pageSize = 10
-const totalAuthors = computed(() => authors.value.length)
-const paginatedAuthors = computed(() => {
-    const start = (currentPage.value - 1) * pageSize
-    return filteredAuthors.value.slice(start, start + pageSize)
-})
 
-const alphabet_ru = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЭЮЯ'.split('')
-const alphabet_en = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
-
-// Фильтрация по фамилии
 const filteredAuthors = computed(() => {
-    const q = searchQuery.value.trim().toLowerCase()
-    if (!q) return authors.value
-    return authors.value.filter((a) =>
-        `${a.LastName} ${a.FirstName}`.toLowerCase().includes(q)
-    )
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return authors.value
+  return authors.value.filter((a) =>
+    `${a.LastName} ${a.FirstName}`.toLowerCase().includes(q)
+  )
 })
 
-// Запрос авторов
+const paginatedAuthors = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return filteredAuthors.value.slice(start, start + pageSize)
+})
+
+const totalPages = computed(() => Math.ceil(filteredAuthors.value.length / pageSize))
+
 const fetchAuthors = async () => {
-    isLoading.value = true
-    try {
-        authors.value = await api.getAuthors(selectedLetter.value)
-        currentPage.value = 1
-    } catch (err) {
-        console.error('Ошибка загрузки авторов:', err)
-        authors.value = []
-    } finally {
-        isLoading.value = false
-    }
+  isLoading.value = true
+  try {
+    authors.value = await api.getAuthors(selectedLetter.value)
+    currentPage.value = 1
+  } catch (err) {
+    console.error('Ошибка загрузки авторов:', err)
+    authors.value = []
+  } finally {
+    isLoading.value = false
+  }
 }
 
-// Выбор буквы
 const selectLetter = (letter) => {
-    selectedLetter.value = letter
-    fetchAuthors()
+  selectedLetter.value = letter
+  fetchAuthors()
 }
-
-// Стили кнопок
-const buttonClass = (letter) => [
-    'px-3 py-1 rounded text-sm transition-all',
-    selectedLetter.value === letter
-        ? 'bg-blue-600 text-white shadow'
-        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-]
 
 onMounted(fetchAuthors)
 </script>
+
