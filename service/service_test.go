@@ -55,6 +55,50 @@ func (m *mockRepository) GetAuthorsByLetter(letters string) ([]book.Author, erro
 	return result, nil
 }
 
+func (m *mockRepository) GetAuthorByID(id int64) (*book.Author, error) {
+	if m.authorsError != nil {
+		return nil, m.authorsError
+	}
+	for _, author := range m.authors {
+		if author.ID == id {
+			return &author, nil
+		}
+	}
+	return nil, &testError{msg: "author not found"}
+}
+
+func (m *mockRepository) GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, error) {
+	if m.authorsError != nil {
+		return nil, m.authorsError
+	}
+	var result []book.AuthorWithBookCount
+	for _, author := range m.authors {
+		result = append(result, book.AuthorWithBookCount{
+			Author:    author,
+			BookCount: 0,
+		})
+	}
+	return result, nil
+}
+
+func (m *mockRepository) GetAuthorsWithBookCountByLetter(letters string) ([]book.AuthorWithBookCount, error) {
+	if m.authorsError != nil {
+		return nil, m.authorsError
+	}
+	var result []book.AuthorWithBookCount
+	for _, author := range m.authors {
+		if len(author.LastName) >= len(letters) {
+			if author.LastName[:len(letters)] == letters {
+				result = append(result, book.AuthorWithBookCount{
+					Author:    author,
+					BookCount: 0,
+				})
+			}
+		}
+	}
+	return result, nil
+}
+
 func (m *mockRepository) GetBooks() ([]string, error) {
 	if m.booksError != nil {
 		return nil, m.booksError
@@ -69,11 +113,18 @@ func (m *mockRepository) GetBooksByLetter(letters string) ([]book.Book, error) {
 	return []book.Book{}, nil
 }
 
-func (m *mockRepository) GetBooksByAuthorID(id int64) ([]string, error) {
+func (m *mockRepository) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	if m.booksError != nil {
 		return nil, m.booksError
 	}
-	return []string{}, nil
+	return []book.Book{}, nil
+}
+
+func (m *mockRepository) GetBookByID(id int64) (*book.Book, error) {
+	if m.booksError != nil {
+		return nil, m.booksError
+	}
+	return nil, &testError{msg: "book not found"}
 }
 
 func (m *mockRepository) GetGenres() ([]string, error) {

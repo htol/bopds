@@ -36,15 +36,27 @@ func (s *Service) GetAuthors(ctx context.Context) ([]book.Author, error) {
 }
 
 // GetAuthorsByLetter retrieves authors whose last name starts with the given letter(s)
-func (s *Service) GetAuthorsByLetter(ctx context.Context, letters string) ([]book.Author, error) {
+func (s *Service) GetAuthorsByLetter(ctx context.Context, letters string) ([]book.AuthorWithBookCount, error) {
 	if letters == "" {
 		return nil, fmt.Errorf("letters parameter cannot be empty")
 	}
-	authors, err := s.repo.GetAuthorsByLetter(letters)
+	authors, err := s.repo.GetAuthorsWithBookCountByLetter(letters)
 	if err != nil {
 		return nil, fmt.Errorf("get authors by letter %q: %w", letters, err)
 	}
 	return authors, nil
+}
+
+// GetAuthorByID retrieves a single author by ID
+func (s *Service) GetAuthorByID(ctx context.Context, id int64) (*book.Author, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid author ID: %d", id)
+	}
+	author, err := s.repo.GetAuthorByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("get author by ID %d: %w", id, err)
+	}
+	return author, nil
 }
 
 // Books
@@ -71,7 +83,7 @@ func (s *Service) GetBooksByLetter(ctx context.Context, letters string) ([]book.
 }
 
 // GetBooksByAuthorID retrieves books by the given author ID
-func (s *Service) GetBooksByAuthorID(ctx context.Context, id int64) ([]string, error) {
+func (s *Service) GetBooksByAuthorID(ctx context.Context, id int64) ([]book.Book, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("invalid author ID: %d", id)
 	}
