@@ -46,5 +46,7 @@ export const downloadBook = async (bookId, format = 'fb2') => {
 export const api = {
   getGenres: () => fetchAPI('/api/genres'),
   getAuthors: (letter) => fetchAPI(`/api/authors?startsWith=${letter}`),
-  getBooks: (letter) => fetchAPI(`/api/books?startsWith=${letter}`)
+  getBooks: (letter) => fetchAPI(`/api/books?startsWith=${letter}`),
+  getBooksByAuthor: (authorId) => fetchAPI(`/api/authors/${authorId}/books`),
+  getAuthorById: (authorId) => fetchAPI(`/api/authors/${authorId}`)
 }
