@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -214,6 +218,7 @@ func router(svc *service.Service) http.Handler {
 	mux.HandleFunc("/b", getBooksHandler(svc))
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
+	mux.Handle("/api/books/", withCORS(downloadBookHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
 	mux.HandleFunc("/health", healthCheckHandler(svc))
 
@@ -316,6 +321,7 @@ func withCORS(h http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
 		if r.Method == http.MethodOptions {
 			return
 		}
@@ -339,4 +345,69 @@ func healthCheckHandler(svc *service.Service) http.HandlerFunc {
 			"status": "healthy",
 		})
 	}
+}
+
+func downloadBookHandler(svc *service.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		// Extract book ID from URL: /api/books/123/download?format=fb2
+		path := strings.TrimPrefix(r.URL.Path, "/api/books/")
+		path = strings.TrimSuffix(path, "/download")
+
+		// Parse book ID
+		id, err := strconv.ParseInt(path, 10, 64)
+		if err != nil {
+			respondWithValidationError(w, "invalid book ID")
+			return
+		}
+
+		// Get format parameter
+		format := r.URL.Query().Get("format")
+		if format == "" {
+			format = "fb2" // default
+		}
+
+		if format != "fb2" && format != "epub" {
+			respondWithValidationError(w, "format must be 'fb2' or 'epub'")
+			return
+		}
+
+		var reader io.ReadCloser
+		var filename string
+
+		if format == "fb2" {
+			reader, filename, err = svc.DownloadBookFB2(ctx, id)
+		} else {
+			reader, filename, err = svc.DownloadBookEPUB(ctx, id)
+		}
+
+		if err != nil {
+			if err == repo.ErrNotFound {
+				respondWithError(w, "book not found", err, http.StatusNotFound)
+			} else {
+				respondWithError(w, "failed to prepare download", err, http.StatusInternalServerError)
+			}
+			return
+		}
+		defer reader.Close()
+
+		// Set headers for file download
+		if format == "fb2" {
+			w.Header().Set("Content-Type", "application/fb2+xml")
+		} else {
+			w.Header().Set("Content-Type", "application/epub+zip")
+		}
+
+		// Set filename with proper UTF-8 encoding (RFC 5987)
+		// Use percent-encoding for UTF-8 filename
+		encodedFilename := url.PathEscape(filename)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", encodedFilename))
+
+		// Stream file to response
+		_, err = io.Copy(w, reader)
+		if err != nil {
+			logger.Error("failed to stream file", "error", err, "book_id", id)
+		}
+	})
 }

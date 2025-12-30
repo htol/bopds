@@ -392,7 +392,7 @@ func (r *Repo) GetBooks() ([]string, error) {
 
 func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	pattern := strings.Title(letters) + "%"
-	QUERY := `SELECT  Title FROM books WHERE title LIKE ? COLLATE NOCASE ORDER BY title`
+	QUERY := `SELECT book_id, Title FROM books WHERE title LIKE ? COLLATE NOCASE ORDER BY title`
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
@@ -404,7 +404,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	for rows.Next() {
 		var a book.Book
 
-		if err := rows.Scan(&a.Title); err != nil {
+		if err := rows.Scan(&a.BookID, &a.Title); err != nil {
 			return nil, fmt.Errorf("scan book by letter: %w", err)
 		}
 		books = append(books, a)
@@ -484,4 +484,44 @@ func (r *Repo) GetGenres() ([]string, error) {
 	}
 
 	return genres, nil
+}
+
+func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
+	QUERY := `SELECT book_id, title, lang, archive, filename FROM books WHERE book_id = ?`
+
+	var b book.Book
+	err := r.db.QueryRow(QUERY, id).Scan(&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get book by ID %d: %w", id, err)
+	}
+
+	// Fetch authors for this book
+	authorsQuery := `
+		SELECT a.first_name, a.middle_name, a.last_name
+		FROM authors a
+		JOIN book_authors ba ON a.author_id = ba.author_id
+		WHERE ba.book_id = ?
+		ORDER BY a.last_name, a.first_name
+	`
+
+	rows, err := r.db.Query(authorsQuery, id)
+	if err != nil {
+		return nil, fmt.Errorf("query authors for book %d: %w", id, err)
+	}
+	defer rows.Close()
+
+	authors := make([]book.Author, 0)
+	for rows.Next() {
+		var a book.Author
+		if err := rows.Scan(&a.FirstName, &a.MiddleName, &a.LastName); err != nil {
+			return nil, fmt.Errorf("scan author for book %d: %w", id, err)
+		}
+		authors = append(authors, a)
+	}
+
+	b.Author = authors
+	return &b, nil
 }

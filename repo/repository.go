@@ -1,8 +1,12 @@
 package repo
 
 import (
+	"errors"
 	"github.com/htol/bopds/book"
 )
+
+// ErrNotFound is returned when a record is not found in the repository
+var ErrNotFound = errors.New("record not found")
 
 // Repository defines the interface for data access operations
 type Repository interface {
@@ -20,6 +24,7 @@ type Repository interface {
 	GetBooks() ([]string, error)
 	GetBooksByLetter(letters string) ([]book.Book, error)
 	GetBooksByAuthorID(id int64) ([]string, error)
+	GetBookByID(id int64) (*book.Book, error)
 
 	// Genres
 	GetGenres() ([]string, error)

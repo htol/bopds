@@ -1,16 +1,16 @@
 module github.com/htol/bopds
 
-go 1.23.0
-
-toolchain go1.24.4
+go 1.25.1
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.14
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
-	golang.org/x/sync v0.15.0
+	github.com/vinser/fb2epub v0.0.0-20171116200020-3db872549a6c
+	golang.org/x/net v0.44.0
+	golang.org/x/sync v0.17.0
 )
 
 require (
-	github.com/google/uuid v1.6.0 // indirect
-	golang.org/x/text v0.3.6 // indirect
+	github.com/reinventer/fb2epub v0.0.0-20171116200020-3db872549a6c // indirect
+	golang.org/x/text v0.29.0 // indirect
 )

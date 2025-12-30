@@ -10,6 +10,7 @@ type Author struct {
 }
 
 type Book struct {
+	BookID   int64    `xml:"-" json:"book_id,omitempty"`
 	XMLName  xml.Name `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 title-info"`
 	Author   []Author `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 author"`
 	Title    string   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 book-title"`

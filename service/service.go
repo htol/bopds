@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/htol/bopds/book"
 	"github.com/htol/bopds/repo"
@@ -11,13 +12,15 @@ import (
 
 // Service provides business logic for the application
 type Service struct {
-	repo repo.Repository
+	repo            repo.Repository
+	downloadService *DownloadService
 }
 
 // New creates a new Service with the given repository
 func New(repo repo.Repository) *Service {
 	return &Service{
-		repo: repo,
+		repo:            repo,
+		downloadService: NewDownloadService(repo),
 	}
 }
 
@@ -108,4 +111,21 @@ func (s *Service) Ping(ctx context.Context) error {
 		return fmt.Errorf("repository ping: %w", err)
 	}
 	return nil
+}
+
+// Downloads
+
+// GetBookByID retrieves a single book by ID
+func (s *Service) GetBookByID(ctx context.Context, id int64) (*book.Book, error) {
+	return s.downloadService.GetBookByID(ctx, id)
+}
+
+// DownloadBookFB2 returns an FB2 file stream for download
+func (s *Service) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+	return s.downloadService.DownloadBookFB2(ctx, id)
+}
+
+// DownloadBookEPUB returns an EPUB file stream for download
+func (s *Service) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+	return s.downloadService.DownloadBookEPUB(ctx, id)
 }
