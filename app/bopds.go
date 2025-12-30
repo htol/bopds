@@ -217,6 +217,7 @@ func router(svc *service.Service) http.Handler {
 	mux.HandleFunc("/a", getAuthorsHandler(svc))
 	mux.HandleFunc("/b", getBooksHandler(svc))
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
+	mux.Handle("/api/authors/", withCORS(authorsAPIHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/books/", withCORS(downloadBookHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
@@ -265,6 +266,73 @@ func getAuthorsByLetterHandler(svc *service.Service) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(authors)
+	}
+	return http.HandlerFunc(hf)
+}
+
+func getAuthorByIDHandler(svc *service.Service) http.Handler {
+	hf := func(w http.ResponseWriter, r *http.Request) {
+		// Extract author ID from URL: /api/authors/123
+		path := strings.TrimPrefix(r.URL.Path, "/api/authors/")
+		path = strings.TrimSuffix(path, "/books")
+
+		id, err := strconv.ParseInt(path, 10, 64)
+		if err != nil {
+			respondWithValidationError(w, "invalid author ID")
+			return
+		}
+
+		ctx := r.Context()
+		author, err := svc.GetAuthorByID(ctx, id)
+		if err != nil {
+			if err == repo.ErrNotFound {
+				respondWithError(w, "author not found", err, http.StatusNotFound)
+			} else {
+				respondWithError(w, "Failed to get author", err, http.StatusInternalServerError)
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(author)
+	}
+	return http.HandlerFunc(hf)
+}
+
+func getBooksByAuthorIDHandler(svc *service.Service) http.Handler {
+	hf := func(w http.ResponseWriter, r *http.Request) {
+		// Extract author ID from URL: /api/authors/123/books
+		path := strings.TrimPrefix(r.URL.Path, "/api/authors/")
+		path = strings.TrimSuffix(path, "/books")
+
+		id, err := strconv.ParseInt(path, 10, 64)
+		if err != nil {
+			respondWithValidationError(w, "invalid author ID")
+			return
+		}
+
+		ctx := r.Context()
+		books, err := svc.GetBooksByAuthorID(ctx, id)
+		if err != nil {
+			respondWithError(w, "Failed to get books by author", err, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(books)
+	}
+	return http.HandlerFunc(hf)
+}
+
+func authorsAPIHandler(svc *service.Service) http.Handler {
+	hf := func(w http.ResponseWriter, r *http.Request) {
+		// Check if the path ends with /books
+		if strings.HasSuffix(r.URL.Path, "/books") {
+			getBooksByAuthorIDHandler(svc).ServeHTTP(w, r)
+		} else {
+			// Otherwise, treat it as get author by ID
+			getAuthorByIDHandler(svc).ServeHTTP(w, r)
+		}
 	}
 	return http.HandlerFunc(hf)
 }
