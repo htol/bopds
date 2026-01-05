@@ -2,19 +2,15 @@ package converter
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/htol/bopds/book"
-	"github.com/vinser/fb2epub/converter"
-	"golang.org/x/text/encoding/charmap"
-	"golang.org/x/text/transform"
+	"github.com/htol/fb2c"
 )
 
 // Converter handles FB2 extraction and EPUB conversions
@@ -67,13 +63,19 @@ func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser,
 	return nil, fmt.Errorf("file %s not found in archive", filename)
 }
 
-// ConvertFB2ToEPUB converts an FB2 file to EPUB format
+// ConvertFB2 converts an FB2 file to the specified format (epub or mobi)
 // fb2Path is the path to the FB2 file (can be a temporary file)
-// Returns a ReadCloser for the EPUB data
-func (c *Converter) ConvertFB2ToEPUB(ctx context.Context, fb2Path string) (io.ReadCloser, string, error) {
+// format should be "epub" or "mobi"
+// Returns a ReadCloser for the converted data and the output path
+func (c *Converter) ConvertFB2(ctx context.Context, fb2Path string, format string) (io.ReadCloser, string, error) {
 	// Validate path
 	if strings.Contains(fb2Path, "..") {
 		return nil, "", fmt.Errorf("invalid FB2 path: contains directory traversal")
+	}
+
+	// Validate format
+	if format != "epub" && format != "mobi" {
+		return nil, "", fmt.Errorf("invalid format: must be 'epub' or 'mobi'")
 	}
 
 	// Create a temporary directory for conversion
@@ -82,78 +84,44 @@ func (c *Converter) ConvertFB2ToEPUB(ctx context.Context, fb2Path string) (io.Re
 		return nil, "", fmt.Errorf("create temp dir: %w", err)
 	}
 
-	// Read the FB2 file to check encoding
-	fb2Data, err := os.ReadFile(fb2Path)
+	// Create output path with appropriate extension
+	outputPath := filepath.Join(tempDir, "converted."+format)
+
+	// Use fb2c library for conversion (it handles encoding conversion internally)
+	fb2Converter := fb2c.NewConverter()
+	fb2Converter.SetOptions(fb2c.DefaultConvertOptions())
+
+	// Perform conversion
+	if err := fb2Converter.Convert(fb2Path, outputPath); err != nil {
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("convert FB2 to %s: %w", format, err)
+	}
+
+	// Open the converted file
+	convertedFile, err := os.Open(outputPath)
 	if err != nil {
 		os.RemoveAll(tempDir)
-		return nil, "", fmt.Errorf("read FB2 file: %w", err)
-	}
-
-	// Check if the file has windows-1251 encoding declaration
-	needsConversion := false
-	xmlHeader := regexp.MustCompile(`<\?xml[^>]*encoding=["']([^"']+)["']`)
-	if matches := xmlHeader.FindSubmatch(fb2Data); len(matches) > 1 {
-		encoding := strings.ToLower(string(matches[1]))
-		if encoding == "windows-1251" || encoding == "cp1251" {
-			needsConversion = true
-		}
-	}
-
-	var utf8FB2Path string
-	if needsConversion {
-		// Convert from windows-1251 to UTF-8
-		decoder := charmap.Windows1251.NewDecoder()
-		utf8Reader := transform.NewReader(bytes.NewReader(fb2Data), decoder)
-		utf8Data, err := io.ReadAll(utf8Reader)
-		if err != nil {
-			os.RemoveAll(tempDir)
-			return nil, "", fmt.Errorf("convert encoding: %w", err)
-		}
-
-		// Update XML declaration to UTF-8
-		utf8Str := string(utf8Data)
-		utf8Str = xmlHeader.ReplaceAllString(utf8Str, `<?xml version="1.0" encoding="UTF-8"?>`)
-
-		// Write UTF-8 version to temp file
-		utf8FB2Path = filepath.Join(tempDir, "book_utf8.fb2")
-		if err := os.WriteFile(utf8FB2Path, []byte(utf8Str), 0644); err != nil {
-			os.RemoveAll(tempDir)
-			return nil, "", fmt.Errorf("write UTF-8 FB2: %w", err)
-		}
-	} else {
-		utf8FB2Path = fb2Path
-	}
-
-	// Create output EPUB path
-	epubPath := filepath.Join(tempDir, "converted.epub")
-
-	// Create converter instance
-	conv, err := converter.New(utf8FB2Path, 0)
-	if err != nil {
-		os.RemoveAll(tempDir)
-		return nil, "", fmt.Errorf("create FB2 converter: %w", err)
-	}
-
-	// Perform conversion (translit=false to keep Cyrillic characters)
-	if err := conv.Convert(epubPath, false); err != nil {
-		os.RemoveAll(tempDir)
-		return nil, "", fmt.Errorf("convert FB2 to EPUB: %w", err)
-	}
-
-	// Open the converted EPUB file
-	epubFile, err := os.Open(epubPath)
-	if err != nil {
-		os.RemoveAll(tempDir)
-		return nil, "", fmt.Errorf("open converted EPUB: %w", err)
+		return nil, "", fmt.Errorf("open converted %s: %w", format, err)
 	}
 
 	// Return a wrapper that cleans up when closed
 	return &cleanupReadCloser{
-		ReadCloser: epubFile,
+		ReadCloser: convertedFile,
 		cleanup: func() {
 			os.RemoveAll(tempDir)
 		},
-	}, epubPath, nil
+	}, outputPath, nil
+}
+
+// ConvertFB2ToEPUB converts an FB2 file to EPUB format
+// Maintained for backward compatibility
+func (c *Converter) ConvertFB2ToEPUB(ctx context.Context, fb2Path string) (io.ReadCloser, string, error) {
+	return c.ConvertFB2(ctx, fb2Path, "epub")
+}
+
+// ConvertFB2ToMOBI converts an FB2 file to MOBI format
+func (c *Converter) ConvertFB2ToMOBI(ctx context.Context, fb2Path string) (io.ReadCloser, string, error) {
+	return c.ConvertFB2(ctx, fb2Path, "mobi")
 }
 
 // SanitizeFilename creates a safe filename from a book title
@@ -164,12 +132,17 @@ func SanitizeFilename(title string, format string) string {
 	for _, ch := range unsafe {
 		safe = strings.ReplaceAll(safe, ch, "_")
 	}
-	// Trim whitespace and limit length
-	safe = strings.TrimSpace(safe)
+	// Trim whitespace and trailing dots
+	safe = strings.TrimRight(strings.TrimSpace(safe), ".")
+	// Limit length
 	if len(safe) > 200 {
 		safe = safe[:200]
 	}
-	return safe + "." + format
+	// Add format extension if provided
+	if format != "" {
+		return safe + "." + format
+	}
+	return safe
 }
 
 // FormatAuthorName formats an author's name as "LastName FirstName"
