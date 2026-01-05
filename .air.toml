@@ -3,9 +3,9 @@ testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-  args_bin = []
+  args_bin = ["serve"]
   bin = "./bopds"
-  cmd = "go build"
+  cmd = "GOTOOLCHAIN=auto go build -buildvcs=false"
   delay = 1000
   exclude_dir = ["assets", "tmp", "vendor", "testdataa", "frontend", "lib"]
   exclude_file = []

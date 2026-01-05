@@ -1,0 +1,44 @@
+services:
+  bopds-dev:
+    image: bopds:development
+    container_name: bopds-dev-server
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+      args:
+        GO_VERSION: 1.25
+        NODE_VERSION: 22
+
+    ports:
+      - "${PORT:-3001}:3001"
+
+    environment:
+      - PORT=${PORT:-3001}
+      - DB_PATH=/data/books.db
+      - LIBRARY_PATH=/library
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - GOTOOLCHAIN=auto
+
+    volumes:
+      # Source code for hot-reload (Go)
+      - .:/app
+
+      # Frontend node_modules (prevent overwriting)
+      - /app/frontend/node_modules
+
+      # Database persistence
+      - db-dev-data:/data
+
+      # Library directory
+      - ${LIBRARY_PATH:-./lib}:/library:ro
+
+    # Keep container running for debugging
+    stdin_open: true
+    tty: true
+
+    command: ["air", "-c", ".air.toml"]
+
+volumes:
+  db-dev-data:
+    driver: local

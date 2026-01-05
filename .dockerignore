@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+
+# Build artifacts (keep frontend build context)
+/frontend/node_modules
+/frontend/dist
+/frontend/.vite
+
+# Go build artifacts
+bopds
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Development tools
+.air.toml
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+*.tmp
+*.log
+*.prof
+
+# Database (will be mounted as volume)
+*.db
+*.db-shm
+*.db-wal
+
+# Library files (will be mounted as volume)
+lib/*.fb2
+lib/*.zip
+lib/*.epub
+lib/*.mobi
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude/CI files
+.claude
+.github
