@@ -137,7 +137,17 @@ func (s *Service) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser,
 	return s.downloadService.DownloadBookFB2(ctx, id)
 }
 
+// DownloadBookFB2Zip returns an FB2 file packed in ZIP archive
+func (s *Service) DownloadBookFB2Zip(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+	return s.downloadService.DownloadBookFB2Zip(ctx, id)
+}
+
 // DownloadBookEPUB returns an EPUB file stream for download
 func (s *Service) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, error) {
 	return s.downloadService.DownloadBookEPUB(ctx, id)
+}
+
+// DownloadBookMOBI returns a MOBI file stream for download
+func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+	return s.downloadService.DownloadBookMOBI(ctx, id)
 }
