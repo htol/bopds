@@ -20,20 +20,40 @@
           :variant="isDownloading('fb2') ? 'accent' : 'primary'"
           size="sm"
           :loading="isDownloading('fb2')"
-          :disabled="isDownloading('epub')"
+          :disabled="isDownloading('fb2.zip') || isDownloading('epub') || isDownloading('mobi')"
           @click.stop="handleDownload('fb2')"
         >
           {{ isDownloading('fb2') ? '' : 'FB2' }}
         </BaseButton>
 
         <BaseButton
+          :variant="isDownloading('fb2.zip') ? 'accent' : 'primary'"
+          size="sm"
+          :loading="isDownloading('fb2.zip')"
+          :disabled="isDownloading('fb2') || isDownloading('epub') || isDownloading('mobi')"
+          @click.stop="handleDownload('fb2.zip')"
+        >
+          {{ isDownloading('fb2.zip') ? '' : 'FB2.ZIP' }}
+        </BaseButton>
+
+        <BaseButton
           :variant="isDownloading('epub') ? 'accent' : 'primary'"
           size="sm"
           :loading="isDownloading('epub')"
-          :disabled="isDownloading('fb2')"
+          :disabled="isDownloading('fb2') || isDownloading('fb2.zip') || isDownloading('mobi')"
           @click.stop="handleDownload('epub')"
         >
           {{ isDownloading('epub') ? '' : 'EPUB' }}
+        </BaseButton>
+
+        <BaseButton
+          :variant="isDownloading('mobi') ? 'accent' : 'primary'"
+          size="sm"
+          :loading="isDownloading('mobi')"
+          :disabled="isDownloading('fb2') || isDownloading('fb2.zip') || isDownloading('epub')"
+          @click.stop="handleDownload('mobi')"
+        >
+          {{ isDownloading('mobi') ? '' : 'MOBI' }}
         </BaseButton>
       </div>
     </div>
