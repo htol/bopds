@@ -74,8 +74,11 @@ func (m *mockRepository) GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, 
 	var result []book.AuthorWithBookCount
 	for _, author := range m.authors {
 		result = append(result, book.AuthorWithBookCount{
-			Author:    author,
-			BookCount: 0,
+			ID:         author.ID,
+			FirstName:  author.FirstName,
+			MiddleName: author.MiddleName,
+			LastName:   author.LastName,
+			BookCount:  0,
 		})
 	}
 	return result, nil
@@ -90,8 +93,11 @@ func (m *mockRepository) GetAuthorsWithBookCountByLetter(letters string) ([]book
 		if len(author.LastName) >= len(letters) {
 			if author.LastName[:len(letters)] == letters {
 				result = append(result, book.AuthorWithBookCount{
-					Author:    author,
-					BookCount: 0,
+					ID:         author.ID,
+					FirstName:  author.FirstName,
+					MiddleName: author.MiddleName,
+					LastName:   author.LastName,
+					BookCount:  0,
 				})
 			}
 		}
