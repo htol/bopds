@@ -436,18 +436,23 @@ func downloadBookHandler(svc *service.Service) http.Handler {
 			format = "fb2" // default
 		}
 
-		if format != "fb2" && format != "epub" {
-			respondWithValidationError(w, "format must be 'fb2' or 'epub'")
+		if format != "fb2" && format != "fb2.zip" && format != "epub" && format != "mobi" {
+			respondWithValidationError(w, "format must be 'fb2', 'fb2.zip', 'epub' or 'mobi'")
 			return
 		}
 
 		var reader io.ReadCloser
 		var filename string
 
-		if format == "fb2" {
+		switch format {
+		case "fb2":
 			reader, filename, err = svc.DownloadBookFB2(ctx, id)
-		} else {
+		case "fb2.zip":
+			reader, filename, err = svc.DownloadBookFB2Zip(ctx, id)
+		case "epub":
 			reader, filename, err = svc.DownloadBookEPUB(ctx, id)
+		case "mobi":
+			reader, filename, err = svc.DownloadBookMOBI(ctx, id)
 		}
 
 		if err != nil {
@@ -461,10 +466,15 @@ func downloadBookHandler(svc *service.Service) http.Handler {
 		defer reader.Close()
 
 		// Set headers for file download
-		if format == "fb2" {
+		switch format {
+		case "fb2":
 			w.Header().Set("Content-Type", "application/fb2+xml")
-		} else {
+		case "fb2.zip":
+			w.Header().Set("Content-Type", "application/zip")
+		case "epub":
 			w.Header().Set("Content-Type", "application/epub+zip")
+		case "mobi":
+			w.Header().Set("Content-Type", "application/x-mobipocket-ebook")
 		}
 
 		// Set filename with proper UTF-8 encoding (RFC 5987)
