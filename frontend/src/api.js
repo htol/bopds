@@ -48,5 +48,8 @@ export const api = {
   getAuthors: (letter) => fetchAPI(`/api/authors?startsWith=${letter}`),
   getBooks: (letter) => fetchAPI(`/api/books?startsWith=${letter}`),
   getBooksByAuthor: (authorId) => fetchAPI(`/api/authors/${authorId}/books`),
-  getAuthorById: (authorId) => fetchAPI(`/api/authors/${authorId}`)
+  getAuthorById: (authorId) => fetchAPI(`/api/authors/${authorId}`),
+  searchBooks: (query, limit = 20, offset = 0) => {
+    return fetchAPI(`/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`)
+  }
 }
