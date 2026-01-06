@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -172,54 +173,129 @@ func parseInpEntry(entry []string) *book.Book {
 		listSep = ":"
 		itemSep = ","
 	)
-	bookEntry := &book.Book{}
+	bookEntry := &book.Book{
+		Deleted: false, // Default: present/active (0 in INPX)
+	}
+
 	for fieldIdx, field := range entry {
 		switch fieldIdx {
 		case flAuthor:
 			list := strings.Split(field[:len(field)-1], listSep)
-			//fmt.Printf("list: %#v\n", list)
 			for _, entry := range list {
 				parts := strings.Split(entry, itemSep)
-				author := &book.Author{
-					FirstName:  parts[1],
-					MiddleName: parts[2],
-					LastName:   parts[0],
+				if len(parts) >= 3 {
+					author := &book.Author{
+						FirstName:  parts[1],
+						MiddleName: parts[2],
+						LastName:   parts[0],
+					}
+					bookEntry.Author = append(bookEntry.Author, *author)
 				}
-				bookEntry.Author = append(bookEntry.Author, *author)
 			}
-			// fmt.Printf("Author: %#v\n", book.Author)
+
 		case flGenre:
 			genres := strings.Split(field[:len(field)-1], listSep)
-			//fmt.Printf("list: %#v\n", genres)
 			bookEntry.Genres = genres
+
 		case flTitle:
 			bookEntry.Title = field
+
 		case flSeries:
-			//fmt.Println(field)
+			if field != "" {
+				if bookEntry.Series == nil {
+					bookEntry.Series = &book.SeriesInfo{}
+				}
+				bookEntry.Series.Name = field
+			}
+
 		case flSerNo:
-			// probably seq number (tome number) in series
-			//fmt.Println(field)
+			if field != "" {
+				if bookEntry.Series == nil {
+					bookEntry.Series = &book.SeriesInfo{}
+				}
+				if serNo, err := strconv.Atoi(field); err == nil {
+					bookEntry.Series.SeriesNo = serNo
+				}
+			}
+
 		case flFile:
 			bookEntry.FileName = field
+
 		case flSize:
-			//file size
+			if field != "" {
+				if size, err := strconv.ParseInt(field, 10, 64); err == nil {
+					bookEntry.FileSize = size
+				}
+			}
+
 		case flLibID:
-			// was equal to filename number
+			if field != "" {
+				if libID, err := strconv.ParseInt(field, 10, 64); err == nil {
+					bookEntry.LibID = libID
+				}
+			}
+
 		case flDeleted:
-			// TODO: need further investigation
-			//fmt.Println(field)
+			if field != "" {
+				// INPX: 0=present/active, 1=marked for deletion or absent
+				if deleted, err := strconv.Atoi(field); err == nil {
+					bookEntry.Deleted = (deleted == 1)
+				}
+			}
+
 		case flExt:
 			bookEntry.FileName += "." + field
+
 		case flDate:
+			bookEntry.DateAdded = field
+
 		case flLang:
 			bookEntry.Lang = field
+
 		case flLibRate:
+			if field != "" {
+				if rate, err := strconv.Atoi(field); err == nil {
+					bookEntry.LibRate = rate
+				}
+			}
+
 		case flKeyWords:
-		case flURI: // depricated?
+			if field != "" {
+				bookEntry.Keywords = parseKeywords(field)
+			}
+
+		case flURI:
+			// Deprecated, ignore
+
 		default:
 		}
 	}
 	return bookEntry
+}
+
+// Helper function to parse keywords
+func parseKeywords(field string) []string {
+	// Check if field contains commas - prioritize comma separation
+	trimmed := strings.TrimSpace(field)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	var parts []string
+	if strings.Contains(trimmed, ",") {
+		parts = strings.Split(trimmed, ",")
+	} else {
+		parts = strings.Fields(trimmed)
+	}
+
+	// Filter empty strings
+	var result []string
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func checkFilesContent(files []string) error {

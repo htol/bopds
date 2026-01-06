@@ -34,6 +34,34 @@ type Book struct {
 	Genres   []string `xml:""`
 	Archive  string
 	FileName string
+
+	// ===== NEW FIELDS FROM INPX =====
+	FileSize  int64       `json:"file_size,omitempty"`   // flSize
+	DateAdded string      `json:"date_added,omitempty"`  // flDate (YYYY-MM-DD)
+	LibID     int64       `json:"lib_id,omitempty"`      // flLibID
+	Deleted   bool        `json:"deleted,omitempty"`     // flDeleted
+	LibRate   int         `json:"lib_rate,omitempty"`    // flLibRate
+	Series    *SeriesInfo `json:"series,omitempty"`      // flSeries + flSerNo
+	Keywords  []string    `json:"keywords,omitempty"`    // flKeyWords
+}
+
+// SeriesInfo represents series information
+type SeriesInfo struct {
+	ID       int64  `json:"series_id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	SeriesNo int    `json:"series_no,omitempty"`
+}
+
+// Genre represents a genre (for queries)
+type Genre struct {
+	ID   int64  `json:"genre_id"`
+	Name string `json:"name"`
+}
+
+// Keyword represents a keyword (for queries)
+type Keyword struct {
+	ID   int64  `json:"keyword_id"`
+	Name string `json:"name"`
 }
 
 type Storager interface {
