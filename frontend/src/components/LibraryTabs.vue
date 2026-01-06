@@ -22,6 +22,7 @@
     </nav>
 
     <!-- Content -->
+    <SearchView v-if="activeTab === 'Поиск'" />
     <AuthorsView
       v-if="activeTab === 'Авторы'"
       @show-author-books="handleShowAuthorBooks"
@@ -40,12 +41,13 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 
+import SearchView from '@/components/SearchView.vue'
 import AuthorsView from '@/components/AuthorsView.vue'
 import GenresView from '@/components/GenresView.vue'
 import BooksView from '@/components/BooksView.vue'
 
-const tabs = ['Авторы', 'Жанры', 'Книги']
-const activeTab = ref('Авторы')
+const tabs = ['Поиск', 'Авторы', 'Жанры', 'Книги']
+const activeTab = ref('Поиск')
 
 // Books view state
 const booksViewMode = ref('alphabet')
@@ -96,7 +98,9 @@ watch(activeTab, (newTab, oldTab) => {
   }
 
   // Update URL hash
-  if (newTab === 'Авторы') {
+  if (newTab === 'Поиск') {
+    history.replaceState({ tab: newTab }, '', '#search')
+  } else if (newTab === 'Авторы') {
     history.replaceState({ tab: newTab }, '', '#authors')
   } else if (newTab === 'Жанры') {
     history.replaceState({ tab: newTab }, '', '#genres')
@@ -126,7 +130,9 @@ onMounted(() => {
 
   // Set initial state based on current hash
   const hash = window.location.hash
-  if (hash.includes('#books')) {
+  if (hash.includes('#search')) {
+    activeTab.value = 'Поиск'
+  } else if (hash.includes('#books')) {
     activeTab.value = 'Книги'
   } else if (hash.includes('#genres')) {
     activeTab.value = 'Жанры'
@@ -135,6 +141,17 @@ onMounted(() => {
   }
 
   // Set initial history state
-  history.replaceState({ tab: activeTab.value }, '', `#${activeTab.value.toLowerCase() === 'авторы' ? 'authors' : activeTab.value.toLowerCase() === 'жанры' ? 'genres' : 'books'}`)
+  const tabLower = activeTab.value.toLowerCase()
+  let hashStr = ''
+  if (tabLower === 'поиск') {
+    hashStr = 'search'
+  } else if (tabLower === 'авторы') {
+    hashStr = 'authors'
+  } else if (tabLower === 'жанры') {
+    hashStr = 'genres'
+  } else {
+    hashStr = 'books'
+  }
+  history.replaceState({ tab: activeTab.value }, '', `#${hashStr}`)
 })
 </script>
