@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,16 +14,15 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// escapeFTS5Query escapes special characters in FTS5 search queries
-// FTS5 special characters: - " ( ) { }
 func escapeFTS5Query(query string) string {
-	// Escape double quotes by doubling them (FTS5 convention)
+	query = strings.TrimSpace(query)
+
+	space := regexp.MustCompile(`\s+`)
+	query = space.ReplaceAllString(query, " ")
+	query = strings.TrimSpace(query)
+
 	escaped := strings.ReplaceAll(query, "\"", "\"\"")
-
-	// Replace hyphens with spaces (they're NOT operators in FTS5)
 	escaped = strings.ReplaceAll(escaped, "-", " ")
-
-	// Remove other special FTS5 characters that could cause issues
 	escaped = strings.ReplaceAll(escaped, "'", "")
 	escaped = strings.ReplaceAll(escaped, "(", "")
 	escaped = strings.ReplaceAll(escaped, ")", "")
@@ -146,37 +146,26 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
             CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
             CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author);
+             CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, book_id);
 
-            CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
-              INSERT INTO books_fts(title, author)
-              VALUES (
-                new.title,
-                (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
-                 FROM book_authors ba
-                 LEFT JOIN authors a ON ba.author_id = a.author_id
-                 WHERE ba.book_id = new.book_id)
-              );
+             CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
+               INSERT INTO books_fts(title, author, book_id)
+               VALUES (
+                 new.title,
+                 (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+                  FROM book_authors ba
+                  LEFT JOIN authors a ON ba.author_id = a.author_id
+                  WHERE ba.book_id = new.book_id),
+                 new.book_id
+               );
             END;
 
-            CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
-              DELETE FROM books_fts WHERE rowid IN (
-                SELECT fts.rowid
-                FROM books_fts fts
-                JOIN books b ON fts.title = b.title
-                WHERE b.book_id = old.book_id
-                LIMIT 1
-              );
+             CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
+               DELETE FROM books_fts WHERE book_id = old.book_id;
             END;
 
-            CREATE TRIGGER IF NOT EXISTS books_fts_update AFTER UPDATE ON books BEGIN
-              UPDATE books_fts SET title = new.title WHERE rowid IN (
-                SELECT fts.rowid
-                FROM books_fts fts
-                JOIN books b ON fts.title = b.title
-                WHERE b.book_id = new.book_id
-                LIMIT 1
-              );
+             CREATE TRIGGER IF NOT EXISTS books_fts_update AFTER UPDATE ON books BEGIN
+               UPDATE books_fts SET title = new.title WHERE book_id = new.book_id;
             END;
  	    `
 
@@ -985,7 +974,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 	ftsQuery := escapeFTS5Query(cleanQuery) + "*"
 
 	// Search FTS5 table and join back to books table for full details
-	// Uses title-based join since FTS5 doesn't maintain direct book_id mapping
+	// Uses book_id column for direct, accurate mapping
 	QUERY := `
 		SELECT
 			b.book_id,
@@ -996,7 +985,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 			fts.rank,
 			group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ') as author
 		FROM books_fts fts
-		JOIN books b ON fts.title = b.title
+		JOIN books b ON fts.book_id = b.book_id
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		WHERE books_fts MATCH ?

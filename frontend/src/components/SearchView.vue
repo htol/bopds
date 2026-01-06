@@ -139,7 +139,7 @@ const loadMore = async () => {
   const nextPage = page.value + 1
 
   try {
-    const offset = nextPage * pageSize
+    const offset = page.value * pageSize
     const newResults = await api.searchBooks(searchQuery.value, pageSize, offset)
 
     if (newResults.length === 0) {
