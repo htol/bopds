@@ -9,7 +9,7 @@ frontend:
 	cd frontend; npm run build
 
 build: frontend
-	go build
+	CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
 
 test:
 	go test ./...
