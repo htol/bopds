@@ -221,6 +221,7 @@ func router(svc *service.Service) http.Handler {
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/books/", withCORS(downloadBookHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
+	mux.Handle("/api/search", withCORS(searchBooksHandler(svc)))
 	mux.HandleFunc("/health", healthCheckHandler(svc))
 
 	// Apply middleware chain
@@ -324,6 +325,62 @@ func getBooksByAuthorIDHandler(svc *service.Service) http.Handler {
 	return http.HandlerFunc(hf)
 }
 
+
+func searchBooksHandler(svc *service.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		// Parse and validate query parameter
+		query := r.URL.Query().Get("q")
+		if query == "" {
+			respondWithValidationError(w, "missing 'q' query parameter")
+			return
+		}
+
+		// Parse limit with validation
+		limitStr := r.URL.Query().Get("limit")
+		limit := 20 // default
+		if limitStr != "" {
+			l, err := strconv.Atoi(limitStr)
+			if err != nil {
+				respondWithValidationError(w, "invalid 'limit' parameter")
+				return
+			}
+			if l < 1 || l > 100 {
+				respondWithValidationError(w, "'limit' must be between 1 and 100")
+				return
+			}
+			limit = l
+		}
+
+		// Parse offset with validation
+		offsetStr := r.URL.Query().Get("offset")
+		offset := 0 // default
+		if offsetStr != "" {
+			o, err := strconv.Atoi(offsetStr)
+			if err != nil {
+				respondWithValidationError(w, "invalid 'offset' parameter")
+				return
+			}
+			if o < 0 {
+				respondWithValidationError(w, "'offset' must be >= 0")
+				return
+			}
+			offset = o
+		}
+
+		// Perform search with context for cancellation
+		results, err := svc.SearchBooks(ctx, query, limit, offset)
+		if err != nil {
+			respondWithError(w, "Failed to search books", err, http.StatusInternalServerError)
+			return
+		}
+
+		// Return JSON response
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	})
+}
 func authorsAPIHandler(svc *service.Service) http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		// Check if the path ends with /books
