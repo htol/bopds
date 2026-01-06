@@ -151,3 +151,18 @@ func (s *Service) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser
 func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, error) {
 	return s.downloadService.DownloadBookMOBI(ctx, id)
 }
+
+// SearchBooks performs full-text search across books by title and/or author
+// Validates query and delegates to repository with context for cancellation
+func (s *Service) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+	// Validate query before calling repository
+	if query == "" {
+		return []book.BookSearchResult{}, nil
+	}
+	
+	books, err := s.repo.SearchBooks(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("search books: %w", err)
+	}
+	return books, nil
+}

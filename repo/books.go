@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -11,6 +12,25 @@ import (
 	"github.com/htol/bopds/logger"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// escapeFTS5Query escapes special characters in FTS5 search queries
+// FTS5 special characters: - " ( ) { }
+func escapeFTS5Query(query string) string {
+	// Escape double quotes by doubling them (FTS5 convention)
+	escaped := strings.ReplaceAll(query, "\"", "\"\"")
+
+	// Replace hyphens with spaces (they're NOT operators in FTS5)
+	escaped = strings.ReplaceAll(escaped, "-", " ")
+
+	// Remove other special FTS5 characters that could cause issues
+	escaped = strings.ReplaceAll(escaped, "'", "")
+	escaped = strings.ReplaceAll(escaped, "(", "")
+	escaped = strings.ReplaceAll(escaped, ")", "")
+	escaped = strings.ReplaceAll(escaped, "{", "")
+	escaped = strings.ReplaceAll(escaped, "}", "")
+
+	return strings.TrimSpace(escaped)
+}
 
 type Repo struct {
 	db   *sql.DB
@@ -123,9 +143,42 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE,
                FOREIGN KEY (keyword_id) REFERENCES keywords(keyword_id)
            );
-           CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
-           CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
-	    `
+            CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
+            CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author);
+
+            CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
+              INSERT INTO books_fts(title, author)
+              VALUES (
+                new.title,
+                (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+                 FROM book_authors ba
+                 LEFT JOIN authors a ON ba.author_id = a.author_id
+                 WHERE ba.book_id = new.book_id)
+              );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
+              DELETE FROM books_fts WHERE rowid IN (
+                SELECT fts.rowid
+                FROM books_fts fts
+                JOIN books b ON fts.title = b.title
+                WHERE b.book_id = old.book_id
+                LIMIT 1
+              );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS books_fts_update AFTER UPDATE ON books BEGIN
+              UPDATE books_fts SET title = new.title WHERE rowid IN (
+                SELECT fts.rowid
+                FROM books_fts fts
+                JOIN books b ON fts.title = b.title
+                WHERE b.book_id = new.book_id
+                LIMIT 1
+              );
+            END;
+ 	    `
 
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
@@ -621,7 +674,8 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
-			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate
+			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
+			   a.first_name, a.middle_name, a.last_name
 		FROM books b
 		JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
@@ -641,16 +695,16 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		var b book.Book
 		var author book.Author
 		var firstName, middleName, lastName sql.NullString
-		var deletedInt int
+		var deleted bool
 		var libRate sql.NullInt64
 
 		if err := rows.Scan(&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
-			&b.FileSize, &b.DateAdded, &b.LibID, &deletedInt, &libRate,
+			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 			&firstName, &middleName, &lastName); err != nil {
 			return nil, fmt.Errorf("scan book by author id: %w", err)
 		}
 
-		b.Deleted = deletedInt != 0
+		b.Deleted = deleted
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
@@ -911,4 +965,66 @@ func (r *Repo) GetAllKeywords() ([]book.Keyword, error) {
 	}
 
 	return keywords, nil
+}
+
+// SearchBooks performs full-text search across book titles and authors
+// Uses FTS5 for fast, ranked search results
+// Optimized with single query including author JOIN (fixes N+1 query issue)
+func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+	// Validate query
+	if query == "" {
+		return []book.BookSearchResult{}, nil
+	}
+
+	cleanQuery := strings.TrimSpace(query)
+	if cleanQuery == "" {
+		return []book.BookSearchResult{}, nil
+	}
+
+	// Escape FTS5 special characters to prevent injection
+	ftsQuery := escapeFTS5Query(cleanQuery) + "*"
+
+	// Search FTS5 table and join back to books table for full details
+	// Uses title-based join since FTS5 doesn't maintain direct book_id mapping
+	QUERY := `
+		SELECT
+			b.book_id,
+			b.title,
+			b.lang,
+			b.archive,
+			b.filename,
+			fts.rank,
+			group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ') as author
+		FROM books_fts fts
+		JOIN books b ON fts.title = b.title
+		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
+		LEFT JOIN authors a ON ba.author_id = a.author_id
+		WHERE books_fts MATCH ?
+		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, fts.rank
+		ORDER BY fts.rank, b.title COLLATE NOCASE
+		LIMIT ? OFFSET ?
+	`
+
+	// Use context for query cancellation
+	rows, err := r.db.QueryContext(ctx, QUERY, ftsQuery, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("search books: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]book.BookSearchResult, 0)
+	for rows.Next() {
+		var r book.BookSearchResult
+		err := rows.Scan(&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName, &r.Rank, &r.Author)
+		if err != nil {
+			return nil, fmt.Errorf("scan search result: %w", err)
+		}
+
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate search results: %w", err)
+	}
+
+	return results, nil
 }

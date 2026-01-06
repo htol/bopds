@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"errors"
 	"github.com/htol/bopds/book"
 )
@@ -28,6 +29,10 @@ type Repository interface {
 	GetBooksByLetter(letters string) ([]book.Book, error)
 	GetBooksByAuthorID(id int64) ([]book.Book, error)
 	GetBookByID(id int64) (*book.Book, error)
+
+	// SearchBooks performs full-text search across books by title and author
+	// Returns results ranked by relevance (FTS5 rank)
+	SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error)
 
 	// Genres
 	GetGenres() ([]string, error)
