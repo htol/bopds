@@ -13,9 +13,8 @@ import (
 )
 
 type Repo struct {
-	db           *sql.DB
-	path         string
-	AuthorsCache map[book.Author]int64
+	db   *sql.DB
+	path string
 	//authorsTotal uint
 	//authorsSeq   uint
 }
@@ -29,8 +28,7 @@ func GetStorage(path string) *Repo {
 
 func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	r := &Repo{
-		path:         path,
-		AuthorsCache: make(map[book.Author]int64),
+		path: path,
 		//authorsTotal: 0,
 		//authorsSeq:   0,
 	}
@@ -98,11 +96,6 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 		panic(err)
 	}
 
-	if err := r.initAuthorsCache(); err != nil {
-		logger.Error("Failed to initialize authors cache", "error", err)
-		panic(err)
-	}
-
 	return r
 }
 
@@ -113,28 +106,6 @@ func (r *Repo) Close() error {
 // Ping checks if the database connection is alive
 func (r *Repo) Ping() error {
 	return r.db.Ping()
-}
-
-func (r *Repo) initAuthorsCache() error {
-	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors`
-
-	rows, err := r.db.Query(QUERY)
-	if err != nil {
-		return fmt.Errorf("query authors cache: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var a book.Author
-		var authorId int64
-
-		if err := rows.Scan(&authorId, &a.FirstName, &a.MiddleName, &a.LastName); err != nil {
-			return fmt.Errorf("scan author cache: %w", err)
-		}
-		r.AuthorsCache[a] = authorId
-	}
-
-	return nil
 }
 
 func (r *Repo) Add(record *book.Book) error {
@@ -273,6 +244,16 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 	}
 
 	result := []int64{}
+
+	selectStmt, err := r.db.Prepare(`
+		SELECT author_id FROM authors 
+		WHERE first_name = ? AND middle_name = ? AND last_name = ?
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("prepare select author: %w", err)
+	}
+	defer selectStmt.Close()
+
 	INSERT_AUTHOR := `INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id`
 	insertStm, err := r.db.Prepare(INSERT_AUTHOR)
 	if err != nil {
@@ -281,21 +262,28 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 	defer insertStm.Close()
 
 	for _, author := range authors {
-		id, ok := r.AuthorsCache[author]
-		if ok {
-			result = append(result, id)
-			continue
+		var authorID int64
+
+		err := selectStmt.QueryRow(
+			author.FirstName,
+			author.MiddleName,
+			author.LastName,
+		).Scan(&authorID)
+
+		if err == sql.ErrNoRows {
+			err := insertStm.QueryRow(
+				author.FirstName,
+				author.MiddleName,
+				author.LastName,
+			).Scan(&authorID)
+			if err != nil {
+				return nil, fmt.Errorf("insert author: %w", err)
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("select author: %w", err)
 		}
-		sqlresult, err := insertStm.Exec(author.FirstName, author.MiddleName, author.LastName)
-		if err != nil {
-			return nil, fmt.Errorf("insert author: %w", err)
-		}
-		id, err = sqlresult.LastInsertId()
-		if err != nil {
-			return nil, fmt.Errorf("get author id: %w", err)
-		}
-		r.AuthorsCache[author] = id
-		result = append(result, id)
+
+		result = append(result, authorID)
 	}
 	return result, nil
 }

@@ -21,8 +21,13 @@ func TestGetOrCreateAuthor(t *testing.T) {
 			MiddleName: "Петрович",
 			LastName:   "Иванов"},
 	}
-	db.getOrCreateAuthor(authors)
-	t.Logf("#%v", db.AuthorsCache)
+	authorIDs, err := db.getOrCreateAuthor(authors)
+	if err != nil {
+		t.Fatalf("getOrCreateAuthor failed: %v", err)
+	}
+	if len(authorIDs) != 1 {
+		t.Fatalf("expected 1 author ID, got %d", len(authorIDs))
+	}
 }
 
 func TestAdd(t *testing.T) {
@@ -41,6 +46,5 @@ func TestAdd(t *testing.T) {
 
 	db.Add(book)
 
-	t.Logf("#%v", db.AuthorsCache)
 	t.Log(buf.String())
 }
