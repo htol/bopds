@@ -15,10 +15,21 @@ func init() {
 	logger.Init("info")
 }
 
+// cleanupTestDB removes the test database and any SQLite WAL files
+func cleanupTestDB(path string) {
+	os.Remove(path)
+	os.Remove(path + "-shm")
+	os.Remove(path + "-wal")
+}
+
 func TestGetOrCreateAuthor(t *testing.T) {
-	os.Remove("./test.db")
-	db := GetStorage("test.db")
-	defer db.Close()
+	dbPath := "./test.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
 	authors := []book.Author{
 		{
 			XMLName:    xml.Name{},
@@ -36,10 +47,14 @@ func TestGetOrCreateAuthor(t *testing.T) {
 }
 
 func TestAdd(t *testing.T) {
-	os.Remove("./test.db")
+	dbPath := "./test.db"
+	cleanupTestDB(dbPath)
 
-	db := GetStorage("test.db")
-	defer db.Close()
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
 
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
