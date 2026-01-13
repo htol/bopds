@@ -152,6 +152,14 @@ func (m *mockRepository) List() error {
 	return nil
 }
 
+func (m *mockRepository) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+	return []book.BookSearchResult{}, nil
+}
+
+func (m *mockRepository) RebuildFTSIndex() error {
+	return nil
+}
+
 func TestService_GetAuthors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -189,7 +197,7 @@ func TestService_GetAuthors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &mockRepository{
-				authors:     tt.authors,
+				authors:      tt.authors,
 				authorsError: tt.authorsErr,
 			}
 			svc := New(mockRepo)
@@ -245,8 +253,8 @@ func TestService_GetGenres(t *testing.T) {
 		expectCount int
 	}{
 		{
-			name: "success with genres",
-			genres: []string{"Fiction", "Science", "History"},
+			name:        "success with genres",
+			genres:      []string{"Fiction", "Science", "History"},
 			genresErr:   nil,
 			expectError: false,
 			expectCount: 3,
@@ -270,7 +278,7 @@ func TestService_GetGenres(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &mockRepository{
-				genres:     tt.genres,
+				genres:      tt.genres,
 				genresError: tt.genresErr,
 			}
 			svc := New(mockRepo)
