@@ -45,6 +45,11 @@ type Repo struct {
 	keywordCache map[string]int64
 }
 
+type linkData struct {
+	bookID  int64
+	otherID int64
+}
+
 // AuthorKey struct for map key
 type AuthorKey struct {
 	Last   string
@@ -365,20 +370,204 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 	}
 	defer tx.Rollback()
 
+	// New Bulk Strategy
+	// 1. Insert Books in chunks and get IDs
+	if err := r.bulkInsertBooks(tx, records); err != nil {
+		return err
+	}
+
+	// 2. Prepare link data
+	// We need to resolve all Authors/Genres/Series IDs using the Cache first
+	// Because we need the BookID (which we just got) and the EntityID (from cache)
+	var bookAuthors []linkData
+	var bookGenres []linkData
+	var bookKeywords []linkData
+
+	// Create "missing" entries in cache if needed (though cache should have them if we pre-filled? No, un-cached items need insert)
+	// Actually, getOrCreate... is still needed for new items.
+	// Optimization: We can do a pass to gather all unique new authors/genres, insert them in bulk, update cache.
+	// BUT, for now, let's just stick to the cache check we implemented in BatchInserter, but make it bulk-friendly?
+	// The current BatchInserter `getOrCreate` logic is fine for "getting IDs".
+	// The bottleneck is the INSERT into book_authors.
+
+	// Let's use a temporary BatchInserter just for resolving IDs efficiently if we want,
+	// or move getOrCreate logic to Repo methods.
+	// For simplicity and speed:
+	// We iterate records, resolve IDs (using cache or single insert for new items - new items are rare in subsequent scans,
+	// but common in first scan. Ideally we bulk insert new authors too, but that's complex).
+	// Let's stick to: Resolve IDs (fast cache hit usually), collect pairs, then BULK INSERT the pairs.
+
 	bi, err := r.NewBatchInserter(tx)
 	if err != nil {
 		return err
 	}
-	// Pass the repo reference to use the cache
 	bi.repo = r
 	defer bi.Close()
 
-	for _, record := range records {
-		if err := bi.Add(record); err != nil {
+	for _, b := range records {
+		// Resolve Authors
+		aIds, err := bi.getOrCreateAuthors(b.Author)
+		if err != nil {
+			return err
+		}
+		for _, aID := range aIds {
+			bookAuthors = append(bookAuthors, linkData{b.BookID, aID})
+		}
+
+		// Resolve Genes
+		for _, gName := range b.Genres {
+			if gName == "" {
+				continue
+			}
+			gID, err := bi.getOrCreateGenre(gName)
+			if err != nil {
+				return err
+			}
+			bookGenres = append(bookGenres, linkData{b.BookID, gID})
+		}
+
+		// Resolve Series
+		// Handled by bulkInsertSeriesLinks later to avoid duplicate getOrCreate logic
+
+		// Resolve Keywords
+		for _, kw := range b.Keywords {
+			if kw == "" {
+				continue
+			}
+			kID, err := bi.getOrCreateKeyword(kw)
+			if err != nil {
+				return err
+			}
+			bookKeywords = append(bookKeywords, linkData{b.BookID, kID})
+		}
+	}
+
+	// 3. Bulk Insert Links
+	if err := r.bulkInsertLinks(tx, "book_authors", "book_id, author_id", bookAuthors); err != nil {
+		return err
+	}
+	if err := r.bulkInsertLinks(tx, "book_genres", "book_id, genre_id", bookGenres); err != nil {
+		return err
+	}
+	if err := r.bulkInsertLinks(tx, "book_keywords", "book_id, keyword_id", bookKeywords); err != nil {
+		return err
+	}
+
+	// Series (needs extra column)
+	if err := r.bulkInsertSeriesLinks(tx, records, bi); err != nil {
+		return err
+	} // Pass bi to resolve series IDs inside
+
+	return tx.Commit()
+}
+
+func (r *Repo) bulkInsertBooks(tx *sql.Tx, records []*book.Book) error {
+	chunkSize := 100 // SQLite limit var params ~32k, 9 cols * 100 = 900 params. 500 is fine too.
+	for i := 0; i < len(records); i += chunkSize {
+		end := i + chunkSize
+		if end > len(records) {
+			end = len(records)
+		}
+		chunk := records[i:end]
+
+		valueStrings := make([]string, 0, len(chunk))
+		valueArgs := make([]interface{}, 0, len(chunk)*9)
+
+		for _, b := range chunk {
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			del := 0
+			if b.Deleted {
+				del = 1
+			}
+			valueArgs = append(valueArgs, b.Title, b.Lang, b.Archive, b.FileName, b.FileSize, b.DateAdded, b.LibID, del, b.LibRate)
+		}
+
+		// RETURNING book_id is crucial to update the struct in-place
+		stmt := fmt.Sprintf("INSERT INTO books(title, lang, archive, filename, file_size, date_added, lib_id, deleted, lib_rate) VALUES %s RETURNING book_id",
+			strings.Join(valueStrings, ","))
+
+		rows, err := tx.Query(stmt, valueArgs...)
+		if err != nil {
+			return err
+		}
+
+		idx := 0
+		for rows.Next() {
+			if err := rows.Scan(&chunk[idx].BookID); err != nil {
+				rows.Close()
+				return err
+			}
+			idx++
+		}
+		rows.Close()
+	}
+	return nil
+}
+
+func (r *Repo) bulkInsertLinks(tx *sql.Tx, table string, columns string, links []linkData) error {
+	chunkSize := 500
+	for i := 0; i < len(links); i += chunkSize {
+		end := i + chunkSize
+		if end > len(links) {
+			end = len(links)
+		}
+		chunk := links[i:end]
+
+		valueStrings := make([]string, 0, len(chunk))
+		valueArgs := make([]interface{}, 0, len(chunk)*2)
+
+		for _, l := range chunk {
+			valueStrings = append(valueStrings, "(?, ?)")
+			valueArgs = append(valueArgs, l.bookID, l.otherID)
+		}
+
+		stmt := fmt.Sprintf("INSERT OR IGNORE INTO %s(%s) VALUES %s", table, columns, strings.Join(valueStrings, ","))
+		if _, err := tx.Exec(stmt, valueArgs...); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
+}
+
+func (r *Repo) bulkInsertSeriesLinks(tx *sql.Tx, records []*book.Book, bi *BatchInserter) error {
+	type seriesLink struct {
+		bID int64
+		sID int64
+		no  int
+	}
+	var links []seriesLink
+
+	for _, b := range records {
+		if b.Series != nil && b.Series.Name != "" {
+			sID, err := bi.getOrCreateSeries(b.Series.Name)
+			if err != nil {
+				return err
+			}
+			links = append(links, seriesLink{b.BookID, sID, b.Series.SeriesNo})
+		}
+	}
+
+	chunkSize := 300
+	for i := 0; i < len(links); i += chunkSize {
+		end := i + chunkSize
+		if end > len(links) {
+			end = len(links)
+		}
+		chunk := links[i:end]
+
+		valueStrings := make([]string, 0, len(chunk))
+		valueArgs := make([]interface{}, 0, len(chunk)*3)
+		for _, l := range chunk {
+			valueStrings = append(valueStrings, "(?, ?, ?)")
+			valueArgs = append(valueArgs, l.bID, l.sID, l.no)
+		}
+
+		stmt := fmt.Sprintf("INSERT OR REPLACE INTO book_series(book_id, series_id, series_no) VALUES %s", strings.Join(valueStrings, ","))
+		if _, err := tx.Exec(stmt, valueArgs...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Add adds a single book
