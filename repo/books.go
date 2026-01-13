@@ -782,23 +782,72 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 		return nil, fmt.Errorf("iterate books by letter: %w", err)
 	}
 
-	// Maps are unordered, but we want to respect the SQL ORDER BY title.
-	// However, since we used a map, order is lost. We need to re-sort or maintain order.
-	// Simpler approach: Create a slice of IDs in order, then build result.
-	// Or, since we're only fetching by letter, we can sort the final slice.
-
+	// Re-sort in Go to be fast and correct (since map randomization)
 	books := make([]book.Book, 0, len(booksMap))
 	for _, book := range booksMap {
 		books = append(books, *book)
 	}
 
-	// Re-sort in Go to be fast and correct (since map randomization)
-	// Sort by Title
-	sort.Slice(books, func(i, j int) bool {
-		return strings.ToLower(books[i].Title) < strings.ToLower(books[j].Title)
-	})
+	sortBooks(books)
 
 	return books, nil
+}
+
+// sortBooks sorts books by Author -> Series -> SeriesNo -> Title
+func sortBooks(books []book.Book) {
+	sort.Slice(books, func(i, j int) bool {
+		b1 := &books[i]
+		b2 := &books[j]
+
+		// 1. Author (Last Name, First Name) - First author only
+		var a1, a2 book.Author
+		if len(b1.Author) > 0 {
+			a1 = b1.Author[0]
+		}
+		if len(b2.Author) > 0 {
+			a2 = b2.Author[0]
+		}
+
+		if a1.LastName != a2.LastName {
+			return strings.ToLower(a1.LastName) < strings.ToLower(a2.LastName)
+		}
+		if a1.FirstName != a2.FirstName {
+			return strings.ToLower(a1.FirstName) < strings.ToLower(a2.FirstName)
+		}
+
+		// 2. Series Name
+		var s1, s2 string
+		if b1.Series != nil {
+			s1 = b1.Series.Name
+		}
+		if b2.Series != nil {
+			s2 = b2.Series.Name
+		}
+		if s1 != s2 {
+			// Books with series usually come together.
+			// If one has series and other doesn't (and authors match),
+			// usually we want to group series.
+			// Plain string comparison works: empty string < non-empty.
+			// So books without series come first? Or last?
+			// Let's stick to standard string compare for now.
+			return strings.ToLower(s1) < strings.ToLower(s2)
+		}
+
+		// 3. Series Number
+		var sn1, sn2 int
+		if b1.Series != nil {
+			sn1 = b1.Series.SeriesNo
+		}
+		if b2.Series != nil {
+			sn2 = b2.Series.SeriesNo
+		}
+		if sn1 != sn2 {
+			return sn1 < sn2
+		}
+
+		// 4. Title
+		return strings.ToLower(b1.Title) < strings.ToLower(b2.Title)
+	})
 }
 
 func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
@@ -897,10 +946,13 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		return nil, fmt.Errorf("iterate books by author id: %w", err)
 	}
 
+	// Re-sort using universal logic
 	books := make([]book.Book, 0, len(booksMap))
 	for _, book := range booksMap {
 		books = append(books, *book)
 	}
+
+	sortBooks(books)
 
 	return books, nil
 }
@@ -1117,6 +1169,8 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 		books = append(books, b)
 	}
 
+	sortBooks(books)
+
 	return books, nil
 }
 
@@ -1189,7 +1243,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		LEFT JOIN series s ON bs.series_id = s.series_id
 		WHERE books_fts MATCH ? AND b.deleted = 0
 		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank
-		ORDER BY fts.rank, b.title COLLATE NOCASE
+		ORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
 	`
 
