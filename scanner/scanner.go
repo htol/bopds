@@ -47,7 +47,7 @@ type Storager interface {
 }
 
 // ScanLibrary scanning all file names in libraries directories
-func ScanLibrary(basedir string, storage Storager) error {
+func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 	var (
 		files []string
 		inpxs []string
@@ -98,7 +98,9 @@ func ScanLibrary(basedir string, storage Storager) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		batchSize := 1000
+		if batchSize <= 0 {
+			batchSize = 1000
+		}
 		batch := make([]*book.Book, 0, batchSize)
 
 		for entry := range entries {

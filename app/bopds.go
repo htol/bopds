@@ -137,7 +137,7 @@ func (app *appEnv) run() error {
 				logger.Error("Error closing storage", "error", err)
 			}
 		}()
-		if err := scanner.ScanLibrary(app.libraryPath, storage); err != nil {
+		if err := scanner.ScanLibrary(app.libraryPath, storage, app.config.Database.BatchSize); err != nil {
 			return err
 		}
 		// Rebuild FTS index to populate author, series, and genre fields

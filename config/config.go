@@ -24,6 +24,7 @@ type DatabaseConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime int // seconds
+	BatchSize       int
 }
 
 type LibraryConfig struct {
@@ -44,6 +45,7 @@ func Load() *Config {
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 25),
 			ConnMaxLifetime: getEnvInt("DB_CONN_MAX_LIFETIME", 300),
+			BatchSize:       getEnvInt("DB_BATCH_SIZE", 1000),
 		},
 		Library: LibraryConfig{
 			Path: getEnv("LIBRARY_PATH", "./lib"),
