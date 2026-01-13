@@ -2,14 +2,21 @@
 
 all: build
 
+build: frontend backend
+
 clean:
 	rm -f books.db books.db.backup books.db-wal books.db-shm
 
 frontend:
 	cd frontend; npm run build
 
-build: frontend
+backend:
 	CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+
+dev:
+	tmux new-session -d -s bopds-dev 'cd frontend && npm run dev'
+	tmux split-window -v -t bopds-dev 'air'
+	tmux attach-session -t bopds-dev
 
 test:
 	go test -tags "sqlite_omit_load_extension,fts5" ./...
@@ -26,3 +33,4 @@ serve: build
 
 env:
 	go install github.com/air-verse/air@latest
+	go install golang.org/x/tools/gopls@latest

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(go test:*)",
+      "Bash(find:*)",
+      "mcp__web-search-prime__webSearchPrime",
+      "Bash(sqlite3:*)",
+      "Bash(unzip:*)",
+      "Bash(go build:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(tree:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(npm run build:*)",
+      "WebSearch",
+      "Bash(cat:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker build:*)",
+      "Bash(docker port:*)",
+      "Bash(docker logs:*)"
+    ]
+  }
+}
