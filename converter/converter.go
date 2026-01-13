@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"os/exec"
+
 	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
 	"github.com/htol/fb2c"
@@ -65,6 +67,21 @@ func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, 
 		return nil, fmt.Errorf("invalid filename: %w", err)
 	}
 
+	// Try native Go extraction first (supports LZMA, LZMA2, Deflate, etc.)
+	rc, err := c.extractFrom7zNative(archivePath, filename)
+	if err == nil {
+		return rc, nil
+	}
+
+	// Fallback for algorithms unsupported by pure Go lib (e.g. PPMd, BCJ)
+	if strings.Contains(err.Error(), "unsupported compression algorithm") {
+		return c.extractWith7zCLI(archivePath, filename)
+	}
+
+	return nil, err
+}
+
+func (c *Converter) extractFrom7zNative(archivePath, filename string) (io.ReadCloser, error) {
 	if strings.Contains(archivePath, "..") {
 		return nil, fmt.Errorf("invalid archive path: contains directory traversal")
 	}
@@ -93,6 +110,37 @@ func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, 
 
 	r.Close()
 	return nil, fmt.Errorf("file %s not found in archive", filename)
+}
+
+func (c *Converter) extractWith7zCLI(archivePath, filename string) (io.ReadCloser, error) {
+	// Use system 7z binary to extract to stdout
+	cmd := exec.Command("7z", "e", "-so", archivePath, filename)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("7z cli pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("7z cli start: %w", err)
+	}
+
+	return &cmdReadCloser{
+		ReadCloser: stdout,
+		cmd:        cmd,
+	}, nil
+}
+
+type cmdReadCloser struct {
+	io.ReadCloser
+	cmd *exec.Cmd
+}
+
+func (c *cmdReadCloser) Close() error {
+	readErr := c.ReadCloser.Close()
+	// Wait for process to finish (it should exit after pipe close or completion)
+	// We ignore exit error if it's just SIGPIPE due to early close
+	_ = c.cmd.Wait()
+	return readErr
 }
 
 // ExtractFromArchive extracts an FB2 file from a ZIP or 7z archive
