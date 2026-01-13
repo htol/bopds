@@ -208,8 +208,14 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 	}
 	defer tx.Rollback()
 
+	bi, err := r.NewBatchInserter(tx)
+	if err != nil {
+		return err
+	}
+	defer bi.Close()
+
 	for _, record := range records {
-		if err := r.addBookTx(tx, record); err != nil {
+		if err := bi.Add(record); err != nil {
 			return err
 		}
 	}
@@ -218,41 +224,114 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 
 // Add adds a single book
 func (r *Repo) Add(record *book.Book) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	if err := r.addBookTx(tx, record); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return r.AddBatch([]*book.Book{record})
 }
 
-func (r *Repo) addBookTx(tx *sql.Tx, record *book.Book) error {
-	authorsIDs, err := r.getOrCreateAuthor(tx, record.Author)
+type BatchInserter struct {
+	tx                    *sql.Tx
+	stmts                 []*sql.Stmt
+	stmtInsertBook        *sql.Stmt
+	stmtSelectAuthor      *sql.Stmt
+	stmtInsertAuthor      *sql.Stmt
+	stmtInsertBookAuthor  *sql.Stmt
+	stmtSelectGenre       *sql.Stmt
+	stmtInsertGenre       *sql.Stmt
+	stmtInsertBookGenre   *sql.Stmt
+	stmtSelectSeries      *sql.Stmt
+	stmtInsertSeries      *sql.Stmt
+	stmtInsertBookSeries  *sql.Stmt
+	stmtSelectKeyword     *sql.Stmt
+	stmtInsertKeyword     *sql.Stmt
+	stmtInsertBookKeyword *sql.Stmt
+}
+
+func (r *Repo) NewBatchInserter(tx *sql.Tx) (*BatchInserter, error) {
+	bi := &BatchInserter{tx: tx}
+	var err error
+
+	prepare := func(query string) (*sql.Stmt, error) {
+		s, e := tx.Prepare(query)
+		if e != nil {
+			return nil, e
+		}
+		bi.stmts = append(bi.stmts, s)
+		return s, nil
+	}
+
+	if bi.stmtInsertBook, err = prepare(`INSERT INTO books(title, lang, archive, filename, file_size, date_added, lib_id, deleted, lib_rate) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtSelectAuthor, err = prepare(`SELECT author_id FROM authors WHERE first_name = ? AND middle_name = ? AND last_name = ?`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertAuthor, err = prepare(`INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertBookAuthor, err = prepare(`INSERT OR IGNORE INTO book_authors(book_id, author_id) VALUES(?, ?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtSelectGenre, err = prepare(`SELECT genre_id FROM genres WHERE name = ?`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertGenre, err = prepare(`INSERT INTO genres(name) VALUES(?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertBookGenre, err = prepare(`INSERT OR IGNORE INTO book_genres(book_id, genre_id) VALUES(?, ?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtSelectSeries, err = prepare(`SELECT series_id FROM series WHERE name = ?`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertSeries, err = prepare(`INSERT INTO series(name) VALUES(?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertBookSeries, err = prepare(`INSERT OR REPLACE INTO book_series (book_id, series_id, series_no) VALUES (?, ?, ?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtSelectKeyword, err = prepare(`SELECT keyword_id FROM keywords WHERE name = ?`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertKeyword, err = prepare(`INSERT INTO keywords(name) VALUES(?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+	if bi.stmtInsertBookKeyword, err = prepare(`INSERT OR IGNORE INTO book_keywords (book_id, keyword_id) VALUES (?, ?)`); err != nil {
+		bi.Close()
+		return nil, err
+	}
+
+	return bi, nil
+}
+
+func (bi *BatchInserter) Close() {
+	for _, s := range bi.stmts {
+		s.Close()
+	}
+}
+
+func (bi *BatchInserter) Add(record *book.Book) error {
+	authorIDs, err := bi.getOrCreateAuthors(record.Author)
 	if err != nil {
 		return fmt.Errorf("get or create author: %w", err)
 	}
-
-	insertBook := `
-		INSERT INTO books(title, lang, archive, filename,
-				file_size, date_added, lib_id, deleted, lib_rate)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-	insertStm, err := tx.Prepare(insertBook)
-	if err != nil {
-		return fmt.Errorf("prepare insert book: %w", err)
-	}
-	defer insertStm.Close()
 
 	deletedInt := 0
 	if record.Deleted {
 		deletedInt = 1
 	}
 
-	sqlresult, err := insertStm.Exec(
+	res, err := bi.stmtInsertBook.Exec(
 		record.Title,
 		record.Lang,
 		record.Archive,
@@ -266,34 +345,109 @@ func (r *Repo) addBookTx(tx *sql.Tx, record *book.Book) error {
 	if err != nil {
 		return fmt.Errorf("insert book: %w", err)
 	}
-	bookID, err := sqlresult.LastInsertId()
+	bookID, err := res.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("get book id: %w", err)
 	}
 
-	if err := r.linkAuthors(tx, bookID, authorsIDs); err != nil {
-		return err
-	}
-
-	if len(record.Genres) > 0 {
-		if err := r.linkGenres(tx, bookID, record.Genres); err != nil {
-			return err
+	for _, authorID := range authorIDs {
+		if _, err := bi.stmtInsertBookAuthor.Exec(bookID, authorID); err != nil {
+			return fmt.Errorf("link author: %w", err)
 		}
 	}
 
 	if record.Series != nil && record.Series.Name != "" {
-		if err := r.linkSeries(tx, bookID, record.Series); err != nil {
+		seriesID, err := bi.getOrCreateSeries(record.Series.Name)
+		if err != nil {
 			return err
+		}
+		if _, err := bi.stmtInsertBookSeries.Exec(bookID, seriesID, record.Series.SeriesNo); err != nil {
+			return fmt.Errorf("link series: %w", err)
 		}
 	}
 
-	if len(record.Keywords) > 0 {
-		if err := r.linkKeywords(tx, bookID, record.Keywords); err != nil {
+	for _, genre := range record.Genres {
+		if genre == "" {
+			continue
+		}
+		genreID, err := bi.getOrCreateGenre(genre)
+		if err != nil {
 			return err
+		}
+		if _, err := bi.stmtInsertBookGenre.Exec(bookID, genreID); err != nil {
+			return fmt.Errorf("link genre: %w", err)
+		}
+	}
+
+	for _, kw := range record.Keywords {
+		if kw == "" {
+			continue
+		}
+		kwID, err := bi.getOrCreateKeyword(kw)
+		if err != nil {
+			return err
+		}
+		if _, err := bi.stmtInsertBookKeyword.Exec(bookID, kwID); err != nil {
+			return fmt.Errorf("link keyword: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func (bi *BatchInserter) getOrCreateAuthors(authors []book.Author) ([]int64, error) {
+	ids := make([]int64, 0, len(authors))
+	for _, a := range authors {
+		var id int64
+		err := bi.stmtSelectAuthor.QueryRow(a.FirstName, a.MiddleName, a.LastName).Scan(&id)
+		if err == sql.ErrNoRows {
+			err = bi.stmtInsertAuthor.QueryRow(a.FirstName, a.MiddleName, a.LastName).Scan(&id)
+		}
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (bi *BatchInserter) getOrCreateSeries(name string) (int64, error) {
+	var id int64
+	err := bi.stmtSelectSeries.QueryRow(name).Scan(&id)
+	if err == sql.ErrNoRows {
+		res, err := bi.stmtInsertSeries.Exec(name)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	return id, err
+}
+
+func (bi *BatchInserter) getOrCreateGenre(name string) (int64, error) {
+	var id int64
+	err := bi.stmtSelectGenre.QueryRow(name).Scan(&id)
+	if err == sql.ErrNoRows {
+		res, err := bi.stmtInsertGenre.Exec(name)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	return id, err
+}
+
+func (bi *BatchInserter) getOrCreateKeyword(name string) (int64, error) {
+	var id int64
+	err := bi.stmtSelectKeyword.QueryRow(name).Scan(&id)
+	if err == sql.ErrNoRows {
+		res, err := bi.stmtInsertKeyword.Exec(name)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	return id, err
 }
 
 func (r *Repo) Search() error {
@@ -301,109 +455,6 @@ func (r *Repo) Search() error {
 }
 
 func (r *Repo) List() error {
-	return nil
-}
-
-func (r *Repo) linkAuthors(tx *sql.Tx, bookID int64, authorIDs []int64) error {
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO book_authors(book_id, author_id) VALUES(?, ?)`)
-	if err != nil {
-		return fmt.Errorf("prepare book_authors: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, authorID := range authorIDs {
-		if _, err := stmt.Exec(bookID, authorID); err != nil {
-			return fmt.Errorf("insert book_author: %w", err)
-		}
-	}
-	return nil
-}
-
-// Link series to book
-func (r *Repo) linkSeries(tx *sql.Tx, bookID int64, series *book.SeriesInfo) error {
-	seriesID, err := r.getOrCreateSeries(tx, series.Name)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(`
-		INSERT OR REPLACE INTO book_series (book_id, series_id, series_no)
-		VALUES (?, ?, ?)
-	`, bookID, seriesID, series.SeriesNo)
-
-	return err
-}
-
-func (r *Repo) linkKeywords(tx *sql.Tx, bookID int64, keywords []string) error {
-	for _, keyword := range keywords {
-		if keyword == "" {
-			continue
-		}
-
-		keywordID, err := r.getOrCreateKeyword(tx, keyword)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(`
-			INSERT OR IGNORE INTO book_keywords (book_id, keyword_id)
-			VALUES (?, ?)
-		`, bookID, keywordID)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *Repo) linkGenres(tx *sql.Tx, bookID int64, genres []string) error {
-	if len(genres) == 0 {
-		return nil
-	}
-
-	getGenreStmt, err := tx.Prepare(`SELECT genre_id FROM genres WHERE name = ?`)
-	if err != nil {
-		return fmt.Errorf("prepare get genre: %w", err)
-	}
-	defer getGenreStmt.Close()
-
-	insertGenreStmt, err := tx.Prepare(`INSERT INTO genres(name) VALUES(?)`)
-	if err != nil {
-		return fmt.Errorf("prepare insert genre: %w", err)
-	}
-	defer insertGenreStmt.Close()
-
-	bookGenreStmt, err := tx.Prepare(`INSERT OR IGNORE INTO book_genres(book_id, genre_id) VALUES(?, ?)`)
-	if err != nil {
-		return fmt.Errorf("prepare book_genre: %w", err)
-	}
-	defer bookGenreStmt.Close()
-
-	for _, genre := range genres {
-		if genre == "" {
-			continue
-		}
-
-		var genreID int64
-		err := getGenreStmt.QueryRow(genre).Scan(&genreID)
-		if err == sql.ErrNoRows {
-			result, err := insertGenreStmt.Exec(genre)
-			if err != nil {
-				return fmt.Errorf("insert genre: %w", err)
-			}
-			genreID, err = result.LastInsertId()
-			if err != nil {
-				return fmt.Errorf("get genre id: %w", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("get genre id: %w", err)
-		}
-
-		if _, err := bookGenreStmt.Exec(bookID, genreID); err != nil {
-			return fmt.Errorf("insert book_genre: %w", err)
-		}
-	}
-
 	return nil
 }
 
