@@ -45,9 +45,11 @@ func TestSearchBooks_NewFields(t *testing.T) {
 		t.Fatalf("Failed to add book: %v", err)
 	}
 
-	// Rebuild FTS index if necessary (triggers should handle it, but triggers update author field)
-	// We need to make sure FTS is consistent.
-	// The Add function uses a transaction and triggers, so it should be fine.
+	// Rebuild FTS index to populate author/series/genre fields
+	// (per-insert triggers no longer update these for performance reasons)
+	if err := db.RebuildFTSIndex(); err != nil {
+		t.Fatalf("Failed to rebuild FTS index: %v", err)
+	}
 
 	// Perform search using SERIES NAME
 	results, err := db.SearchBooks(context.Background(), "Foundations", 10, 0)

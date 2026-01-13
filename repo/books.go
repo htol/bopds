@@ -152,18 +152,17 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	}
 
 	// Recreate triggers to ensure they are up-to-date
+	// Note: We only keep the basic insert/delete triggers for FTS.
+	// Author, series, and genre linking is handled by RebuildFTSIndex() after bulk imports.
 	triggerStmt := `
            DROP TRIGGER IF EXISTS books_fts_insert;
            CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN
                INSERT INTO books_fts(title, author, series, genre, book_id)
                VALUES (
                  new.title,
-                 (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
-                  FROM book_authors ba
-                  LEFT JOIN authors a ON ba.author_id = a.author_id
-                  WHERE ba.book_id = new.book_id),
-                 (SELECT s.name FROM book_series bs LEFT JOIN series s ON bs.series_id = s.series_id WHERE bs.book_id = new.book_id),
-                 (SELECT group_concat(coalesce(g.display_name, g.name), ' | ') FROM book_genres bg JOIN genres g ON bg.genre_id = g.genre_id WHERE bg.book_id = new.book_id),
+                 NULL,  -- Author will be populated by RebuildFTSIndex
+                 NULL,  -- Series will be populated by RebuildFTSIndex
+                 NULL,  -- Genre will be populated by RebuildFTSIndex
                  new.book_id
                );
             END;
@@ -173,72 +172,13 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                DELETE FROM books_fts WHERE book_id = old.book_id;
            END;
 
+           -- Drop old triggers that caused performance issues during bulk import
            DROP TRIGGER IF EXISTS books_fts_authors_insert;
-           CREATE TRIGGER books_fts_authors_insert AFTER INSERT ON book_authors BEGIN
-                UPDATE books_fts
-                SET author = (
-                  SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
-                  FROM book_authors ba
-                  LEFT JOIN authors a ON ba.author_id = a.author_id
-                  WHERE ba.book_id = new.book_id
-                )
-                WHERE book_id = new.book_id;
-           END;
-
            DROP TRIGGER IF EXISTS books_fts_authors_delete;
-              CREATE TRIGGER books_fts_authors_delete AFTER DELETE ON book_authors BEGIN
-                UPDATE books_fts
-                SET author = (
-                  SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
-                  FROM book_authors ba
-                  LEFT JOIN authors a ON ba.author_id = a.author_id
-                  WHERE ba.book_id = old.book_id
-                )
-                WHERE book_id = old.book_id;
-              END;
-
            DROP TRIGGER IF EXISTS books_fts_series_insert;
-           CREATE TRIGGER books_fts_series_insert AFTER INSERT ON book_series BEGIN
-                UPDATE books_fts
-                SET series = (
-                  SELECT s.name 
-                  FROM book_series bs 
-                  JOIN series s ON bs.series_id = s.series_id 
-                  WHERE bs.book_id = new.book_id
-                )
-                WHERE book_id = new.book_id;
-           END;
-
            DROP TRIGGER IF EXISTS books_fts_series_delete;
-           CREATE TRIGGER books_fts_series_delete AFTER DELETE ON book_series BEGIN
-                UPDATE books_fts
-                SET series = NULL
-                WHERE book_id = old.book_id;
-           END;
-
            DROP TRIGGER IF EXISTS books_fts_genres_insert;
-           CREATE TRIGGER books_fts_genres_insert AFTER INSERT ON book_genres BEGIN
-                UPDATE books_fts
-                SET genre = (
-                  SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
-                  FROM book_genres bg
-                  JOIN genres g ON bg.genre_id = g.genre_id
-                  WHERE bg.book_id = new.book_id
-                )
-                WHERE book_id = new.book_id;
-           END;
-
            DROP TRIGGER IF EXISTS books_fts_genres_delete;
-           CREATE TRIGGER books_fts_genres_delete AFTER DELETE ON book_genres BEGIN
-                UPDATE books_fts
-                SET genre = (
-                  SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
-                  FROM book_genres bg
-                  JOIN genres g ON bg.genre_id = g.genre_id
-                  WHERE bg.book_id = old.book_id
-                )
-                WHERE book_id = old.book_id;
-           END;
     `
 	_, err = db.Exec(triggerStmt)
 	if err != nil {

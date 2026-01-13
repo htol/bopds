@@ -140,6 +140,12 @@ func (app *appEnv) run() error {
 		if err := scanner.ScanLibrary(app.libraryPath, storage); err != nil {
 			return err
 		}
+		// Rebuild FTS index to populate author, series, and genre fields
+		logger.Info("Rebuilding FTS index...")
+		if err := storage.RebuildFTSIndex(); err != nil {
+			return fmt.Errorf("rebuild FTS index: %w", err)
+		}
+		logger.Info("FTS index rebuilt successfully")
 	case "serve":
 		app.storage = storage
 		app.service = service.New(storage)
