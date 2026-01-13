@@ -35,11 +35,8 @@ func escapeFTS5Query(query string) string {
 type Repo struct {
 	db   *sql.DB
 	path string
-	//authorsTotal uint
-	//authorsSeq   uint
 }
 
-// Ensure Repo implements Repository interface
 var _ Repository = (*Repo)(nil)
 
 func GetStorage(path string) *Repo {
@@ -49,8 +46,6 @@ func GetStorage(path string) *Repo {
 func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	r := &Repo{
 		path: path,
-		//authorsTotal: 0,
-		//authorsSeq:   0,
 	}
 
 	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")
@@ -59,7 +54,6 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 		panic(err)
 	}
 
-	// Configure connection pool from config
 	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetime) * time.Second)
@@ -143,12 +137,12 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE,
                FOREIGN KEY (keyword_id) REFERENCES keywords(keyword_id)
            );
-            CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
-            CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
+           CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
+           CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
 
-             CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, book_id);
+           CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, book_id);
 
-             CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
+           CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
                INSERT INTO books_fts(title, author, book_id)
                VALUES (
                  new.title,
@@ -160,14 +154,32 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                );
             END;
 
-             CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
+           CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
                DELETE FROM books_fts WHERE book_id = old.book_id;
-            END;
+           END;
 
-             CREATE TRIGGER IF NOT EXISTS books_fts_update AFTER UPDATE ON books BEGIN
-               UPDATE books_fts SET title = new.title WHERE book_id = new.book_id;
-            END;
- 	    `
+           CREATE TRIGGER IF NOT EXISTS books_fts_authors_insert AFTER INSERT ON book_authors BEGIN
+                UPDATE books_fts
+                SET author = (
+                  SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+                  FROM book_authors ba
+                  LEFT JOIN authors a ON ba.author_id = a.author_id
+                  WHERE ba.book_id = new.book_id
+                )
+                WHERE book_id = new.book_id;
+           END;
+
+              CREATE TRIGGER IF NOT EXISTS books_fts_authors_delete AFTER DELETE ON book_authors BEGIN
+                UPDATE books_fts
+                SET author = (
+                  SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+                  FROM book_authors ba
+                  LEFT JOIN authors a ON ba.author_id = a.author_id
+                  WHERE ba.book_id = old.book_id
+                )
+                WHERE book_id = old.book_id;
+              END;
+  	    `
 
 	_, err = db.Exec(sqlStmt)
 	if err != nil {
@@ -193,18 +205,17 @@ func (r *Repo) Add(record *book.Book) error {
 		return fmt.Errorf("get or create author: %w", err)
 	}
 
-	INSERT_BOOK := `
+	insertBook := `
 		INSERT INTO books(title, lang, archive, filename,
 				file_size, date_added, lib_id, deleted, lib_rate)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	insertStm, err := r.db.Prepare(INSERT_BOOK)
+	insertStm, err := r.db.Prepare(insertBook)
 	if err != nil {
 		return fmt.Errorf("prepare insert book: %w", err)
 	}
 	defer insertStm.Close()
 
-	// Convert deleted bool to integer (1/0)
 	deletedInt := 0
 	if record.Deleted {
 		deletedInt = 1
@@ -229,19 +240,16 @@ func (r *Repo) Add(record *book.Book) error {
 		return fmt.Errorf("get book id: %w", err)
 	}
 
-	// Start transaction for related data
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	// Link authors
 	if err := r.linkAuthors(tx, bookID, authorsIDs); err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// Link genres
 	if len(record.Genres) > 0 {
 		if err := r.linkGenres(tx, bookID, record.Genres); err != nil {
 			tx.Rollback()
@@ -249,7 +257,6 @@ func (r *Repo) Add(record *book.Book) error {
 		}
 	}
 
-	// Link series
 	if record.Series != nil && record.Series.Name != "" {
 		if err := r.linkSeries(tx, bookID, record.Series); err != nil {
 			tx.Rollback()
@@ -257,7 +264,6 @@ func (r *Repo) Add(record *book.Book) error {
 		}
 	}
 
-	// Link keywords
 	if len(record.Keywords) > 0 {
 		if err := r.linkKeywords(tx, bookID, record.Keywords); err != nil {
 			tx.Rollback()
@@ -280,7 +286,6 @@ func (r *Repo) List() error {
 	return nil
 }
 
-// Link authors to book
 func (r *Repo) linkAuthors(tx *sql.Tx, bookID int64, authorIDs []int64) error {
 	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO book_authors(book_id, author_id) VALUES(?, ?)`)
 	if err != nil {
@@ -298,13 +303,11 @@ func (r *Repo) linkAuthors(tx *sql.Tx, bookID int64, authorIDs []int64) error {
 
 // Link series to book
 func (r *Repo) linkSeries(tx *sql.Tx, bookID int64, series *book.SeriesInfo) error {
-	// Get or create series
 	seriesID, err := r.getOrCreateSeries(tx, series.Name)
 	if err != nil {
-		return fmt.Errorf("get or create series: %w", err)
+		return err
 	}
 
-	// Link book to series
 	_, err = tx.Exec(`
 		INSERT OR REPLACE INTO book_series (book_id, series_id, series_no)
 		VALUES (?, ?, ?)
@@ -313,7 +316,6 @@ func (r *Repo) linkSeries(tx *sql.Tx, bookID int64, series *book.SeriesInfo) err
 	return err
 }
 
-// Link keywords to book
 func (r *Repo) linkKeywords(tx *sql.Tx, bookID int64, keywords []string) error {
 	for _, keyword := range keywords {
 		if keyword == "" {
@@ -336,7 +338,6 @@ func (r *Repo) linkKeywords(tx *sql.Tx, bookID int64, keywords []string) error {
 	return nil
 }
 
-// Link genres to book
 func (r *Repo) linkGenres(tx *sql.Tx, bookID int64, genres []string) error {
 	if len(genres) == 0 {
 		return nil
@@ -402,7 +403,6 @@ func (r *Repo) getOrCreateSeries(tx *sql.Tx, name string) (int64, error) {
 	return seriesID, err
 }
 
-// Get or create keyword
 func (r *Repo) getOrCreateKeyword(tx *sql.Tx, name string) (int64, error) {
 	var keywordID int64
 	err := tx.QueryRow(`SELECT keyword_id FROM keywords WHERE name = ?`, name).Scan(&keywordID)
@@ -432,8 +432,9 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 	}
 	defer selectStmt.Close()
 
-	INSERT_AUTHOR := `INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id`
-	insertStm, err := r.db.Prepare(INSERT_AUTHOR)
+	insertStm, err := r.db.Prepare(`
+		INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("prepare insert author: %w", err)
 	}
@@ -660,6 +661,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 
 	return books, nil
 }
+
 func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
@@ -678,7 +680,6 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	}
 	defer rows.Close()
 
-	// Use map to collect books with multiple authors
 	booksMap := make(map[int64]*book.Book)
 	for rows.Next() {
 		var b book.Book
@@ -698,9 +699,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 			b.LibRate = int(libRate.Int64)
 		}
 
-		// Check if book already exists in map
 		if existingBook, ok := booksMap[b.BookID]; ok {
-			// Add author to existing book
 			if firstName.Valid || middleName.Valid || lastName.Valid {
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
@@ -708,7 +707,6 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 				existingBook.Author = append(existingBook.Author, author)
 			}
 		} else {
-			// Create new book entry
 			if firstName.Valid || middleName.Valid || lastName.Valid {
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
@@ -722,7 +720,6 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		return nil, fmt.Errorf("iterate books by author id: %w", err)
 	}
 
-	// Convert map to slice
 	books := make([]book.Book, 0, len(booksMap))
 	for _, book := range booksMap {
 		books = append(books, *book)
@@ -818,7 +815,6 @@ func (r *Repo) fetchBookDetails(b *book.Book) error {
 	}
 	b.Author = authors
 
-	// Fetch series
 	seriesQuery := `
 		SELECT s.series_id, s.name, bs.series_no
 		FROM series s
@@ -843,7 +839,6 @@ func (r *Repo) fetchBookDetails(b *book.Book) error {
 		}
 	}
 
-	// Fetch keywords
 	keywordsQuery := `
 		SELECT k.keyword_id, k.name
 		FROM keywords k
@@ -871,7 +866,7 @@ func (r *Repo) fetchBookDetails(b *book.Book) error {
 	return nil
 }
 
-// Get all series
+// GetSeries Get all series
 func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
 	QUERY := `SELECT series_id, name FROM series ORDER BY name`
 
@@ -893,7 +888,7 @@ func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
 	return series, nil
 }
 
-// Get books by series
+// GetBooksBySeriesID books by series
 func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
@@ -934,8 +929,8 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 	return books, nil
 }
 
-// Get all keywords
-func (r *Repo) GetAllKeywords() ([]book.Keyword, error) {
+// GetKeywords Get all keywords
+func (r *Repo) GetKeywords() ([]book.Keyword, error) {
 	QUERY := `SELECT keyword_id, name FROM keywords ORDER BY name`
 
 	rows, err := r.db.Query(QUERY)
@@ -994,7 +989,6 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		LIMIT ? OFFSET ?
 	`
 
-	// Use context for query cancellation
 	rows, err := r.db.QueryContext(ctx, QUERY, ftsQuery, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search books: %w", err)
@@ -1016,4 +1010,28 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 	}
 
 	return results, nil
+}
+
+// RebuildFTSIndex rebuilds the full-text search index for all books
+// Updates the author field in books_fts to include properly concatenated author names
+func (r *Repo) RebuildFTSIndex() error {
+	UPDATE_QUERY := `
+		UPDATE books_fts
+		SET author = (
+			SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+			FROM book_authors ba
+			LEFT JOIN authors a ON ba.author_id = a.author_id
+			WHERE ba.book_id = books_fts.book_id
+		)
+	`
+
+	result, err := r.db.Exec(UPDATE_QUERY)
+	if err != nil {
+		return fmt.Errorf("rebuild FTS index: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	logger.Info("FTS index rebuilt", "rows_updated", rowsAffected)
+
+	return nil
 }
