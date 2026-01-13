@@ -12,7 +12,7 @@ build: frontend
 	CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
 
 test:
-	go test ./...
+	go test -tags "sqlite_omit_load_extension,fts5" ./...
 
 init: build clean
 	./bopds init; ls -alsh books.db
