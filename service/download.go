@@ -48,8 +48,8 @@ func (s *DownloadService) DownloadBookFB2(ctx context.Context, id int64) (io.Rea
 		return nil, "", err
 	}
 
-	// Extract FB2 from ZIP archive
-	reader, err := s.converter.ExtractFromZIP(b.Archive, b.FileName)
+	// Extract FB2 from archive (ZIP or 7z)
+	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
 	}
@@ -68,8 +68,8 @@ func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.
 		return nil, "", err
 	}
 
-	// Extract FB2 from ZIP archive
-	fb2Reader, err := s.converter.ExtractFromZIP(b.Archive, b.FileName)
+	// Extract FB2 from archive (ZIP or 7z)
+	fb2Reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
 	}
@@ -96,9 +96,9 @@ func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.
 
 	// Create ZIP entry with the same name as archive (without .zip extension)
 	writer, err := zipWriter.CreateHeader(&zip.FileHeader{
-		Name:   archiveFilename,         // Filename inside archive matches archive name
-		Method: zip.Deflate,             // Standard compression
-		Flags:  0x800,                   // UTF-8 flag for proper encoding
+		Name:   archiveFilename, // Filename inside archive matches archive name
+		Method: zip.Deflate,     // Standard compression
+		Flags:  0x800,           // UTF-8 flag for proper encoding
 	})
 	if err != nil {
 		zipWriter.Close()
@@ -156,8 +156,8 @@ func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.Re
 	}
 	tempPath := tempFile.Name()
 
-	// Extract from ZIP and write to temp file
-	reader, err := s.converter.ExtractFromZIP(b.Archive, b.FileName)
+	// Extract from archive and write to temp file
+	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)
@@ -205,8 +205,8 @@ func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.Re
 	}
 	tempPath := tempFile.Name()
 
-	// Extract from ZIP and write to temp file
-	reader, err := s.converter.ExtractFromZIP(b.Archive, b.FileName)
+	// Extract from archive and write to temp file
+	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)

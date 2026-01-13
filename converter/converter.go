@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
 	"github.com/htol/fb2c"
 )
@@ -56,6 +57,57 @@ func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser,
 
 	r.Close()
 	return nil, fmt.Errorf("file %s not found in archive", filename)
+}
+
+// ExtractFrom7Z extracts an FB2 file from a 7z archive
+func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, error) {
+	if err := validateFilename(filename); err != nil {
+		return nil, fmt.Errorf("invalid filename: %w", err)
+	}
+
+	if strings.Contains(archivePath, "..") {
+		return nil, fmt.Errorf("invalid archive path: contains directory traversal")
+	}
+
+	r, err := sevenzip.OpenReader(archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("open 7z archive: %w", err)
+	}
+
+	for _, f := range r.File {
+		if f.Name == filename {
+			file, err := f.Open()
+			if err != nil {
+				r.Close()
+				return nil, fmt.Errorf("open file in archive: %w", err)
+			}
+
+			return &readCloser{
+				ReadCloser: file,
+				onClose: func() {
+					r.Close()
+				},
+			}, nil
+		}
+	}
+
+	r.Close()
+	return nil, fmt.Errorf("file %s not found in archive", filename)
+}
+
+// ExtractFromArchive extracts an FB2 file from a ZIP or 7z archive
+// It auto-detects the archive type based on file extension
+func (c *Converter) ExtractFromArchive(archivePath, filename string) (io.ReadCloser, error) {
+	ext := strings.ToLower(filepath.Ext(archivePath))
+
+	switch ext {
+	case ".zip":
+		return c.ExtractFromZIP(archivePath, filename)
+	case ".7z":
+		return c.ExtractFrom7Z(archivePath, filename)
+	default:
+		return nil, fmt.Errorf("unsupported archive format: %s", ext)
+	}
 }
 
 // ConvertFB2 converts an FB2 file to EPUB or MOBI format

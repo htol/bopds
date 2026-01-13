@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/sync/errgroup"
@@ -53,6 +54,7 @@ func ScanLibrary(basedir string, storage Storager) error {
 	exts := map[string]bool{
 		".fb2": true,
 		".zip": true,
+		".7z":  true,
 	}
 
 	err := filepath.WalkDir(basedir, func(path string, d fs.DirEntry, err error) error {
@@ -120,10 +122,15 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 			}
 
 			// don't scan inp if library archive absent
-			// TODO: return archive names present in index
-			libArchiveFile := filepath.Join(basedir, strings.TrimSuffix(archiveEntry.Name, ".inp")+".zip")
+			// Check for both .zip and .7z archives
+			baseName := strings.TrimSuffix(archiveEntry.Name, ".inp")
+			libArchiveFile := filepath.Join(basedir, baseName+".zip")
 			if _, err := os.Stat(libArchiveFile); errors.Is(err, os.ErrNotExist) {
-				continue
+				// Try .7z if .zip not found
+				libArchiveFile = filepath.Join(basedir, baseName+".7z")
+				if _, err := os.Stat(libArchiveFile); errors.Is(err, os.ErrNotExist) {
+					continue
+				}
 			}
 
 			content, err := archiveEntry.Open()
@@ -305,6 +312,26 @@ func checkFilesContent(files []string) error {
 				content, err := entry.Open()
 				if err != nil {
 					log.Printf("Failed to read %s in zip: %s", entry.Name, err)
+					continue
+				}
+				defer content.Close()
+
+				if err = bookReader(content); err != nil {
+					log.Printf("fail to read book %s", err)
+				}
+			}
+
+		} else if strings.HasSuffix(file, ".7z") {
+			arch, err := sevenzip.OpenReader(file)
+			if err != nil {
+				return fmt.Errorf("open 7z %s: %w", file, err)
+			}
+			defer arch.Close()
+
+			for _, entry := range arch.File {
+				content, err := entry.Open()
+				if err != nil {
+					log.Printf("Failed to read %s in 7z: %s", entry.Name, err)
 					continue
 				}
 				defer content.Close()

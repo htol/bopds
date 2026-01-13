@@ -82,8 +82,8 @@ air -c .air.toml
 - **repo/**: Database operations, SQLite queries, models
 - **service/**: Business logic layer between handlers and repository
 - **middleware/**: Request logging, recovery, request ID generation
-- **scanner/**: Library scanning and book parsing (FB2 format)
-- **converter/**: Format conversion (FB2 → EPUB, MOBI, etc.)
+- **scanner/**: Library scanning and book parsing (FB2 format from ZIP and 7z archives)
+- **converter/**: Format conversion (FB2 → EPUB, MOBI) and archive extraction (ZIP, 7z)
 - **validator/**: Input validation
 - **book/**: Data models and types
 - **config/**: Configuration loading (environment variables)
@@ -409,7 +409,8 @@ GET  /health                    # Health check
 ## Notes
 
 - **Database**: SQLite with CGO required; build with `CGO_ENABLED=1`
-- **Book format**: FB2 (FictionBook 2.0), converted on-demand to EPUB/MOBI
+- **Book format**: FB2 (FictionBook 2.0) stored in ZIP or 7z archives, converted on-demand to EPUB/MOBI
+- **Archive support**: Both `.zip` and `.7z` archives are supported for book storage
 - **Full-text search**: SQLite FTS5 virtual table for fast book search
 - **CORS**: Enabled for all origins in development (`Access-Control-Allow-Origin: *`)
 - **No test framework**: Uses standard Go testing only (no testify)
