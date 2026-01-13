@@ -161,14 +161,15 @@ func (app *appEnv) run() error {
 			return fmt.Errorf("recreate indexes: %w", err)
 		}
 
-		// Restore normal mode
-		if err := storage.SetFastMode(false); err != nil {
-			logger.Warn("Failed to restore normal mode", "error", err)
-		}
 		// Rebuild FTS index to populate author, series, and genre fields
 		logger.Info("Rebuilding FTS index...")
 		if err := storage.RebuildFTSIndex(); err != nil {
 			return fmt.Errorf("rebuild FTS index: %w", err)
+		}
+
+		// Restore normal mode
+		if err := storage.SetFastMode(false); err != nil {
+			logger.Warn("Failed to restore normal mode", "error", err)
 		}
 		logger.Info("FTS index rebuilt successfully")
 	case "serve":
