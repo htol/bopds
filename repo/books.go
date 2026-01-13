@@ -598,7 +598,7 @@ func (r *Repo) GetAuthorByID(id int64) (*book.Author, error) {
 }
 
 func (r *Repo) GetBooks() ([]string, error) {
-	QUERY := `SELECT * FROM books`
+	QUERY := `SELECT * FROM books WHERE deleted = 0`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -638,7 +638,7 @@ func (r *Repo) GetBooks() ([]string, error) {
 
 func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	pattern := strings.Title(letters) + "%"
-	QUERY := `SELECT book_id, Title FROM books WHERE title LIKE ? COLLATE NOCASE ORDER BY title`
+	QUERY := `SELECT book_id, Title FROM books WHERE title LIKE ? COLLATE NOCASE AND deleted = 0 ORDER BY title`
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
@@ -670,7 +670,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		FROM books b
 		JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
-		WHERE ba.author_id = ?
+		WHERE ba.author_id = ? AND b.deleted = 0
 		ORDER BY b.title
 	`
 
@@ -761,12 +761,12 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	`
 
 	var b book.Book
-	var deletedInt int
+	var deleted bool
 	var libRate sql.NullInt64
 
 	err := r.db.QueryRow(QUERY, id).Scan(
 		&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
-		&b.FileSize, &b.DateAdded, &b.LibID, &deletedInt, &libRate,
+		&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -775,7 +775,7 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 		return nil, fmt.Errorf("get book by ID %d: %w", id, err)
 	}
 
-	b.Deleted = deletedInt != 0
+	b.Deleted = deleted
 	if libRate.Valid {
 		b.LibRate = int(libRate.Int64)
 	}
@@ -895,7 +895,7 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate
 		FROM books b
 		JOIN book_series bs ON b.book_id = bs.book_id
-		WHERE bs.series_id = ?
+		WHERE bs.series_id = ? AND b.deleted = 0
 		ORDER BY bs.series_no, b.title
 	`
 
@@ -908,17 +908,17 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 	books := make([]book.Book, 0)
 	for rows.Next() {
 		var b book.Book
-		var deletedInt int
+		var deleted bool
 		var libRate sql.NullInt64
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
-			&b.FileSize, &b.DateAdded, &b.LibID, &deletedInt, &libRate,
+			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 		); err != nil {
 			return nil, fmt.Errorf("scan book: %w", err)
 		}
 
-		b.Deleted = deletedInt != 0
+		b.Deleted = deleted
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
@@ -983,7 +983,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		JOIN books b ON fts.book_id = b.book_id
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
-		WHERE books_fts MATCH ?
+		WHERE books_fts MATCH ? AND b.deleted = 0
 		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, fts.rank
 		ORDER BY fts.rank, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
