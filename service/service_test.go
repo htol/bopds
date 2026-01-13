@@ -176,6 +176,14 @@ func (m *mockRepository) SetFastMode(enable bool) error {
 	return nil
 }
 
+func (m *mockRepository) SetBulkImportMode(enable bool) error {
+	return nil
+}
+
+func (m *mockRepository) CheckpointWAL() error {
+	return nil
+}
+
 func TestService_GetAuthors(t *testing.T) {
 	tests := []struct {
 		name        string

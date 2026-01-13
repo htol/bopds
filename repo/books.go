@@ -362,6 +362,52 @@ func (r *Repo) SetFastMode(enable bool) error {
 	return err
 }
 
+// SetBulkImportMode configures the database for bulk import operations
+// When enabled: disables WAL auto-checkpoint, increases cache to 256MB
+// When disabled: restores normal checkpoint behavior and cache size
+func (r *Repo) SetBulkImportMode(enable bool) error {
+	if enable {
+		// 1. Disable WAL auto-checkpoint to prevent fsync storms during bulk import
+		// Value of 0 disables auto-checkpoint entirely
+		if _, err := r.db.Exec("PRAGMA wal_autocheckpoint = 0"); err != nil {
+			return fmt.Errorf("disable wal_autocheckpoint: %w", err)
+		}
+
+		// 2. Increase cache size to 256MB for bulk operations
+		// Negative value means size in KiB, so -256000 = ~256MB
+		if _, err := r.db.Exec("PRAGMA cache_size = -256000"); err != nil {
+			return fmt.Errorf("set cache_size: %w", err)
+		}
+
+		logger.Info("Bulk import mode enabled: WAL auto-checkpoint disabled, cache 256MB")
+	} else {
+		// Restore default WAL auto-checkpoint (1000 pages = ~4MB)
+		if _, err := r.db.Exec("PRAGMA wal_autocheckpoint = 1000"); err != nil {
+			return fmt.Errorf("enable wal_autocheckpoint: %w", err)
+		}
+
+		// Restore normal cache size (64MB)
+		if _, err := r.db.Exec("PRAGMA cache_size = -64000"); err != nil {
+			return fmt.Errorf("restore cache_size: %w", err)
+		}
+
+		logger.Info("Bulk import mode disabled: WAL auto-checkpoint enabled, cache 64MB")
+	}
+	return nil
+}
+
+// CheckpointWAL performs a WAL checkpoint to write all pending changes to the database file
+// Use TRUNCATE mode for maximum efficiency: resets WAL file to zero bytes
+func (r *Repo) CheckpointWAL() error {
+	result, err := r.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if err != nil {
+		return fmt.Errorf("wal_checkpoint: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	logger.Info("WAL checkpoint completed", "rows_affected", rows)
+	return nil
+}
+
 // AddBatch adds multiple books in a single transaction
 func (r *Repo) AddBatch(records []*book.Book) error {
 	tx, err := r.db.Begin()
@@ -482,24 +528,28 @@ func (r *Repo) bulkInsertBooks(tx *sql.Tx, records []*book.Book) error {
 			valueArgs = append(valueArgs, b.Title, b.Lang, b.Archive, b.FileName, b.FileSize, b.DateAdded, b.LibID, del, b.LibRate)
 		}
 
-		// RETURNING book_id is crucial to update the struct in-place
-		stmt := fmt.Sprintf("INSERT INTO books(title, lang, archive, filename, file_size, date_added, lib_id, deleted, lib_rate) VALUES %s RETURNING book_id",
+		// Use Exec instead of Query with RETURNING - much faster for bulk inserts
+		stmt := fmt.Sprintf("INSERT INTO books(title, lang, archive, filename, file_size, date_added, lib_id, deleted, lib_rate) VALUES %s",
 			strings.Join(valueStrings, ","))
 
-		rows, err := tx.Query(stmt, valueArgs...)
+		result, err := tx.Exec(stmt, valueArgs...)
 		if err != nil {
 			return err
 		}
 
-		idx := 0
-		for rows.Next() {
-			if err := rows.Scan(&chunk[idx].BookID); err != nil {
-				rows.Close()
-				return err
-			}
-			idx++
+		// Get the last inserted ID and calculate IDs for all inserted rows
+		// SQLite guarantees sequential IDs for multi-value INSERT
+		lastID, err := result.LastInsertId()
+		if err != nil {
+			return err
 		}
-		rows.Close()
+
+		// Assign IDs to records: lastID is the ID of the last inserted row
+		// First row ID = lastID - (len(chunk) - 1)
+		firstID := lastID - int64(len(chunk)-1)
+		for j := range chunk {
+			chunk[j].BookID = firstID + int64(j)
+		}
 	}
 	return nil
 }

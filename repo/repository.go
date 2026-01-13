@@ -49,4 +49,8 @@ type Repository interface {
 	DropIndexes() error
 	InitCache() error
 	SetFastMode(enable bool) error
+
+	// Bulk import optimizations
+	SetBulkImportMode(enable bool) error
+	CheckpointWAL() error
 }
