@@ -137,6 +137,15 @@ func (app *appEnv) run() error {
 				logger.Error("Error closing storage", "error", err)
 			}
 		}()
+		// Prepare for fast scan
+		if err := storage.InitCache(); err != nil {
+			logger.Warn("Failed to initialize cache", "error", err)
+		}
+
+		if err := storage.SetFastMode(true); err != nil {
+			logger.Warn("Failed to set fast mode", "error", err)
+		}
+
 		if err := storage.DropIndexes(); err != nil {
 			logger.Warn("Failed to drop indexes (continuing anyway)", "error", err)
 		} else {
@@ -150,6 +159,11 @@ func (app *appEnv) run() error {
 		logger.Info("Recreating indexes...")
 		if err := storage.CreateIndexes(); err != nil {
 			return fmt.Errorf("recreate indexes: %w", err)
+		}
+
+		// Restore normal mode
+		if err := storage.SetFastMode(false); err != nil {
+			logger.Warn("Failed to restore normal mode", "error", err)
 		}
 		// Rebuild FTS index to populate author, series, and genre fields
 		logger.Info("Rebuilding FTS index...")

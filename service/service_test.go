@@ -168,6 +168,14 @@ func (m *mockRepository) DropIndexes() error {
 	return nil
 }
 
+func (m *mockRepository) InitCache() error {
+	return nil
+}
+
+func (m *mockRepository) SetFastMode(enable bool) error {
+	return nil
+}
+
 func TestService_GetAuthors(t *testing.T) {
 	tests := []struct {
 		name        string

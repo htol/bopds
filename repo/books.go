@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/htol/bopds/book"
@@ -36,6 +37,19 @@ func escapeFTS5Query(query string) string {
 type Repo struct {
 	db   *sql.DB
 	path string
+	// Cache for fast import
+	mu           sync.RWMutex
+	authorCache  map[string]int64
+	genreCache   map[string]int64
+	seriesCache  map[string]int64
+	keywordCache map[string]int64
+}
+
+// AuthorKey struct for map key
+type AuthorKey struct {
+	Last   string
+	First  string
+	Middle string
 }
 
 var _ Repository = (*Repo)(nil)
@@ -46,7 +60,11 @@ func GetStorage(path string) *Repo {
 
 func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	r := &Repo{
-		path: path,
+		path:         path,
+		authorCache:  make(map[string]int64),
+		genreCache:   make(map[string]int64),
+		seriesCache:  make(map[string]int64),
+		keywordCache: make(map[string]int64),
 	}
 
 	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")
@@ -247,6 +265,98 @@ func (r *Repo) Ping() error {
 	return r.db.Ping()
 }
 
+func (r *Repo) InitCache() error {
+	logger.Info("Initializing in-memory cache...")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Load Authors
+	rows, err := r.db.Query("SELECT author_id, first_name, middle_name, last_name FROM authors")
+	if err != nil {
+		return fmt.Errorf("load authors: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var id int64
+		var f, m, l string
+		if err := rows.Scan(&id, &f, &m, &l); err != nil {
+			return err
+		}
+		key := fmt.Sprintf("%s|%s|%s", f, m, l)
+		r.authorCache[key] = id
+		count++
+	}
+	logger.Info("Loaded authors", "count", count)
+
+	// Load Genres
+	rows, err = r.db.Query("SELECT genre_id, name FROM genres")
+	if err != nil {
+		return fmt.Errorf("load genres: %w", err)
+	}
+	defer rows.Close()
+	count = 0
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		r.genreCache[name] = id
+		count++
+	}
+	logger.Info("Loaded genres", "count", count)
+
+	// Load Series
+	rows, err = r.db.Query("SELECT series_id, name FROM series")
+	if err != nil {
+		return fmt.Errorf("load series: %w", err)
+	}
+	defer rows.Close()
+	count = 0
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		r.seriesCache[name] = id
+		count++
+	}
+	logger.Info("Loaded series", "count", count)
+
+	// Load Keywords
+	rows, err = r.db.Query("SELECT keyword_id, name FROM keywords")
+	if err != nil {
+		return fmt.Errorf("load keywords: %w", err)
+	}
+	defer rows.Close()
+	count = 0
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		r.keywordCache[name] = id
+		count++
+	}
+	logger.Info("Loaded keywords", "count", count)
+
+	return nil
+}
+
+func (r *Repo) SetFastMode(enable bool) error {
+	var mode string
+	if enable {
+		mode = "OFF"
+	} else {
+		mode = "NORMAL" // or FULL
+	}
+	_, err := r.db.Exec(fmt.Sprintf("PRAGMA synchronous = %s", mode))
+	return err
+}
+
 // AddBatch adds multiple books in a single transaction
 func (r *Repo) AddBatch(records []*book.Book) error {
 	tx, err := r.db.Begin()
@@ -259,6 +369,8 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 	if err != nil {
 		return err
 	}
+	// Pass the repo reference to use the cache
+	bi.repo = r
 	defer bi.Close()
 
 	for _, record := range records {
@@ -275,6 +387,7 @@ func (r *Repo) Add(record *book.Book) error {
 }
 
 type BatchInserter struct {
+	repo                  *Repo
 	tx                    *sql.Tx
 	stmts                 []*sql.Stmt
 	stmtInsertBook        *sql.Stmt
@@ -445,56 +558,102 @@ func (bi *BatchInserter) Add(record *book.Book) error {
 func (bi *BatchInserter) getOrCreateAuthors(authors []book.Author) ([]int64, error) {
 	ids := make([]int64, 0, len(authors))
 	for _, a := range authors {
-		var id int64
-		err := bi.stmtSelectAuthor.QueryRow(a.FirstName, a.MiddleName, a.LastName).Scan(&id)
-		if err == sql.ErrNoRows {
-			err = bi.stmtInsertAuthor.QueryRow(a.FirstName, a.MiddleName, a.LastName).Scan(&id)
+		key := fmt.Sprintf("%s|%s|%s", a.FirstName, a.MiddleName, a.LastName)
+
+		bi.repo.mu.RLock()
+		id, ok := bi.repo.authorCache[key]
+		bi.repo.mu.RUnlock()
+
+		if ok {
+			ids = append(ids, id)
+			continue
 		}
+
+		// Insert
+		err := bi.stmtInsertAuthor.QueryRow(a.FirstName, a.MiddleName, a.LastName).Scan(&id)
 		if err != nil {
 			return nil, err
 		}
+
+		bi.repo.mu.Lock()
+		bi.repo.authorCache[key] = id
+		bi.repo.mu.Unlock()
+
 		ids = append(ids, id)
 	}
 	return ids, nil
 }
 
 func (bi *BatchInserter) getOrCreateSeries(name string) (int64, error) {
-	var id int64
-	err := bi.stmtSelectSeries.QueryRow(name).Scan(&id)
-	if err == sql.ErrNoRows {
-		res, err := bi.stmtInsertSeries.Exec(name)
-		if err != nil {
-			return 0, err
-		}
-		return res.LastInsertId()
+	bi.repo.mu.RLock()
+	id, ok := bi.repo.seriesCache[name]
+	bi.repo.mu.RUnlock()
+	if ok {
+		return id, nil
 	}
-	return id, err
+
+	res, err := bi.stmtInsertSeries.Exec(name)
+	if err != nil {
+		return 0, err
+	}
+	id, err = res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	bi.repo.mu.Lock()
+	bi.repo.seriesCache[name] = id
+	bi.repo.mu.Unlock()
+
+	return id, nil
 }
 
 func (bi *BatchInserter) getOrCreateGenre(name string) (int64, error) {
-	var id int64
-	err := bi.stmtSelectGenre.QueryRow(name).Scan(&id)
-	if err == sql.ErrNoRows {
-		res, err := bi.stmtInsertGenre.Exec(name)
-		if err != nil {
-			return 0, err
-		}
-		return res.LastInsertId()
+	bi.repo.mu.RLock()
+	id, ok := bi.repo.genreCache[name]
+	bi.repo.mu.RUnlock()
+	if ok {
+		return id, nil
 	}
-	return id, err
+
+	res, err := bi.stmtInsertGenre.Exec(name)
+	if err != nil {
+		return 0, err
+	}
+	id, err = res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	bi.repo.mu.Lock()
+	bi.repo.genreCache[name] = id
+	bi.repo.mu.Unlock()
+
+	return id, nil
 }
 
 func (bi *BatchInserter) getOrCreateKeyword(name string) (int64, error) {
-	var id int64
-	err := bi.stmtSelectKeyword.QueryRow(name).Scan(&id)
-	if err == sql.ErrNoRows {
-		res, err := bi.stmtInsertKeyword.Exec(name)
-		if err != nil {
-			return 0, err
-		}
-		return res.LastInsertId()
+	bi.repo.mu.RLock()
+	id, ok := bi.repo.keywordCache[name]
+	bi.repo.mu.RUnlock()
+	if ok {
+		return id, nil
 	}
-	return id, err
+
+	res, err := bi.stmtInsertKeyword.Exec(name)
+	if err != nil {
+		return 0, err
+	}
+	id, err = res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	bi.repo.mu.Lock()
+	bi.repo.keywordCache[name] = id
+	bi.repo.mu.Unlock()
+
+	return id, nil
 }
 
 func (r *Repo) Search() error {

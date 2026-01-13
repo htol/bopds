@@ -47,4 +47,6 @@ type Repository interface {
 	RebuildFTSIndex() error
 	CreateIndexes() error
 	DropIndexes() error
+	InitCache() error
+	SetFastMode(enable bool) error
 }
