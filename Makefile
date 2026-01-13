@@ -23,3 +23,6 @@ scan: build init
 
 serve: build
 	./bopds serve
+
+env:
+	go install github.com/air-verse/air@latest
