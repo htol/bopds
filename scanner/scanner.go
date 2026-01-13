@@ -42,6 +42,7 @@ const (
 
 type Storager interface {
 	Add(*book.Book) error
+	AddBatch([]*book.Book) error
 }
 
 // ScanLibrary scanning all file names in libraries directories
@@ -96,8 +97,23 @@ func ScanLibrary(basedir string, storage Storager) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		batchSize := 1000
+		batch := make([]*book.Book, 0, batchSize)
+
 		for entry := range entries {
-			storage.Add(entry)
+			batch = append(batch, entry)
+			if len(batch) >= batchSize {
+				if err := storage.AddBatch(batch); err != nil {
+					log.Printf("failed to add batch: %v", err)
+				}
+				// Keep capacity, reset length
+				batch = batch[:0]
+			}
+		}
+		if len(batch) > 0 {
+			if err := storage.AddBatch(batch); err != nil {
+				log.Printf("failed to add batch: %v", err)
+			}
 		}
 	}()
 

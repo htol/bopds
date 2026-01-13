@@ -200,8 +200,38 @@ func (r *Repo) Ping() error {
 	return r.db.Ping()
 }
 
+// AddBatch adds multiple books in a single transaction
+func (r *Repo) AddBatch(records []*book.Book) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, record := range records {
+		if err := r.addBookTx(tx, record); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Add adds a single book
 func (r *Repo) Add(record *book.Book) error {
-	authorsIDs, err := r.getOrCreateAuthor(record.Author)
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := r.addBookTx(tx, record); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repo) addBookTx(tx *sql.Tx, record *book.Book) error {
+	authorsIDs, err := r.getOrCreateAuthor(tx, record.Author)
 	if err != nil {
 		return fmt.Errorf("get or create author: %w", err)
 	}
@@ -211,7 +241,7 @@ func (r *Repo) Add(record *book.Book) error {
 				file_size, date_added, lib_id, deleted, lib_rate)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	insertStm, err := r.db.Prepare(insertBook)
+	insertStm, err := tx.Prepare(insertBook)
 	if err != nil {
 		return fmt.Errorf("prepare insert book: %w", err)
 	}
@@ -241,39 +271,26 @@ func (r *Repo) Add(record *book.Book) error {
 		return fmt.Errorf("get book id: %w", err)
 	}
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-
 	if err := r.linkAuthors(tx, bookID, authorsIDs); err != nil {
-		tx.Rollback()
 		return err
 	}
 
 	if len(record.Genres) > 0 {
 		if err := r.linkGenres(tx, bookID, record.Genres); err != nil {
-			tx.Rollback()
 			return err
 		}
 	}
 
 	if record.Series != nil && record.Series.Name != "" {
 		if err := r.linkSeries(tx, bookID, record.Series); err != nil {
-			tx.Rollback()
 			return err
 		}
 	}
 
 	if len(record.Keywords) > 0 {
 		if err := r.linkKeywords(tx, bookID, record.Keywords); err != nil {
-			tx.Rollback()
 			return err
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return nil
@@ -417,14 +434,14 @@ func (r *Repo) getOrCreateKeyword(tx *sql.Tx, name string) (int64, error) {
 	return keywordID, err
 }
 
-func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
+func (r *Repo) getOrCreateAuthor(tx *sql.Tx, authors []book.Author) ([]int64, error) {
 	if len(authors) < 1 {
 		return nil, nil
 	}
 
 	result := []int64{}
 
-	selectStmt, err := r.db.Prepare(`
+	selectStmt, err := tx.Prepare(`
 		SELECT author_id FROM authors
 		WHERE first_name = ? AND middle_name = ? AND last_name = ?
 	`)
@@ -433,7 +450,7 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 	}
 	defer selectStmt.Close()
 
-	insertStm, err := r.db.Prepare(`
+	insertStm, err := tx.Prepare(`
 		INSERT INTO authors(first_name, middle_name, last_name) VALUES(?, ?, ?) RETURNING author_id
 	`)
 	if err != nil {

@@ -18,7 +18,7 @@ func BenchmarkGetOrCreateAuthor_Existing(b *testing.B) {
 		MiddleName: "Quincy",
 		LastName:   "Adams",
 	}
-	authorIDs, err := db.getOrCreateAuthor([]book.Author{author})
+	authorIDs, err := getOrCreateAuthorHelper(db, []book.Author{author})
 	if err != nil {
 		b.Fatalf("Failed to create author: %v", err)
 	}
@@ -28,7 +28,7 @@ func BenchmarkGetOrCreateAuthor_Existing(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := db.getOrCreateAuthor([]book.Author{author})
+		_, err := getOrCreateAuthorHelper(db, []book.Author{author})
 		if err != nil {
 			b.Fatalf("getOrCreateAuthor failed: %v", err)
 		}
@@ -47,7 +47,7 @@ func BenchmarkGetOrCreateAuthor_Mixed(b *testing.B) {
 		{FirstName: "Author", MiddleName: "Three", LastName: "Test"},
 	}
 	for _, author := range existingAuthors {
-		_, err := db.getOrCreateAuthor([]book.Author{author})
+		_, err := getOrCreateAuthorHelper(db, []book.Author{author})
 		if err != nil {
 			b.Fatalf("Failed to create initial author: %v", err)
 		}
@@ -56,7 +56,7 @@ func BenchmarkGetOrCreateAuthor_Mixed(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if i%2 == 0 {
-			_, err := db.getOrCreateAuthor([]book.Author{existingAuthors[i%3]})
+			_, err := getOrCreateAuthorHelper(db, []book.Author{existingAuthors[i%3]})
 			if err != nil {
 				b.Fatalf("getOrCreateAuthor failed: %v", err)
 			}
@@ -66,7 +66,7 @@ func BenchmarkGetOrCreateAuthor_Mixed(b *testing.B) {
 				MiddleName: "Author",
 				LastName:   string(rune(i)),
 			}
-			_, err := db.getOrCreateAuthor([]book.Author{newAuthor})
+			_, err := getOrCreateAuthorHelper(db, []book.Author{newAuthor})
 			if err != nil {
 				b.Fatalf("getOrCreateAuthor failed: %v", err)
 			}
@@ -87,7 +87,7 @@ func BenchmarkGetOrCreateAuthor_New(b *testing.B) {
 			MiddleName: "Author",
 			LastName:   string(rune(i % 1000)),
 		}
-		_, err := db.getOrCreateAuthor([]book.Author{author})
+		_, err := getOrCreateAuthorHelper(db, []book.Author{author})
 		if err != nil {
 			b.Fatalf("getOrCreateAuthor failed: %v", err)
 		}

@@ -22,6 +22,23 @@ func cleanupTestDB(path string) {
 	os.Remove(path + "-wal")
 }
 
+// getOrCreateAuthorHelper wraps the internal getOrCreateAuthor in a transaction for testing
+func getOrCreateAuthorHelper(db *Repo, authors []book.Author) ([]int64, error) {
+	tx, err := db.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	ids, err := db.getOrCreateAuthor(tx, authors)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func TestGetOrCreateAuthor(t *testing.T) {
 	dbPath := "./test.db"
 	cleanupTestDB(dbPath)
@@ -37,7 +54,7 @@ func TestGetOrCreateAuthor(t *testing.T) {
 			MiddleName: "Петрович",
 			LastName:   "Иванов"},
 	}
-	authorIDs, err := db.getOrCreateAuthor(authors)
+	authorIDs, err := getOrCreateAuthorHelper(db, authors)
 	if err != nil {
 		t.Fatalf("getOrCreateAuthor failed: %v", err)
 	}
