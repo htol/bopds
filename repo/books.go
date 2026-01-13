@@ -462,7 +462,7 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 }
 
 func (r *Repo) bulkInsertBooks(tx *sql.Tx, records []*book.Book) error {
-	chunkSize := 100 // SQLite limit var params ~32k, 9 cols * 100 = 900 params. 500 is fine too.
+	chunkSize := 3000 // Increased from 100. SQLite limit is usually 32766 params. 3000*9 = 27000. Safe.
 	for i := 0; i < len(records); i += chunkSize {
 		end := i + chunkSize
 		if end > len(records) {
@@ -505,7 +505,7 @@ func (r *Repo) bulkInsertBooks(tx *sql.Tx, records []*book.Book) error {
 }
 
 func (r *Repo) bulkInsertLinks(tx *sql.Tx, table string, columns string, links []linkData) error {
-	chunkSize := 500
+	chunkSize := 10000 // SQLite limit ~32k. 10000 * 2 = 20000 vars. Safe.
 	for i := 0; i < len(links); i += chunkSize {
 		end := i + chunkSize
 		if end > len(links) {
@@ -547,7 +547,7 @@ func (r *Repo) bulkInsertSeriesLinks(tx *sql.Tx, records []*book.Book, bi *Batch
 		}
 	}
 
-	chunkSize := 300
+	chunkSize := 10000 // 10000 * 3 = 30000 vars. Safe.
 	for i := 0; i < len(links); i += chunkSize {
 		end := i + chunkSize
 		if end > len(links) {
