@@ -160,6 +160,14 @@ func (m *mockRepository) RebuildFTSIndex() error {
 	return nil
 }
 
+func (m *mockRepository) CreateIndexes() error {
+	return nil
+}
+
+func (m *mockRepository) DropIndexes() error {
+	return nil
+}
+
 func TestService_GetAuthors(t *testing.T) {
 	tests := []struct {
 		name        string

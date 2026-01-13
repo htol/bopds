@@ -61,7 +61,62 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 
 	r.db = db
 
-	// TODO: Drop indexes
+	// Create tables first (without indexes for authors/books to allow fast bulk insert option)
+	// We still need uniqueness constraints on core tables if we rely on them for logic,
+	// but pure performance indexes can be managed separately.
+	// Actually, for safety, let's keep the CREATE TABLE + UNIQUE constraints in CreateIndexes or here?
+	// The problem is if we drop indexes that back UNIQUE constraints, we lose the constraint.
+	// SQLite: "Books" table doesn't have unique constraints other than PK.
+	// "Authors" has UNIQUE(first, middle, last). If we drop that, we might get duplicates if logic fails.
+	// However, the user wants SPEED.
+	// Safe approach: Drop only non-unique performance indexes.
+
+	if err := r.CreateIndexes(); err != nil {
+		logger.Error("Failed to create schema/indexes", "error", err)
+		panic(err)
+	}
+
+	// Recreate triggers to ensure they are up-to-date
+	// Note: We only keep the basic insert/delete triggers for FTS.
+	// Author, series, and genre linking is handled by RebuildFTSIndex() after bulk imports.
+	triggerStmt := `
+           DROP TRIGGER IF EXISTS books_fts_insert;
+           CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN
+               INSERT INTO books_fts(title, author, series, genre, book_id)
+               VALUES (
+                 new.title,
+                 NULL,  -- Author will be populated by RebuildFTSIndex
+                 NULL,  -- Series will be populated by RebuildFTSIndex
+                 NULL,  -- Genre will be populated by RebuildFTSIndex
+                 new.book_id
+               );
+            END;
+
+           DROP TRIGGER IF EXISTS books_fts_delete;
+           CREATE TRIGGER books_fts_delete AFTER DELETE ON books BEGIN
+               DELETE FROM books_fts WHERE book_id = old.book_id;
+           END;
+
+           -- Drop old triggers that caused performance issues during bulk import
+           DROP TRIGGER IF EXISTS books_fts_authors_insert;
+           DROP TRIGGER IF EXISTS books_fts_authors_delete;
+           DROP TRIGGER IF EXISTS books_fts_series_insert;
+           DROP TRIGGER IF EXISTS books_fts_series_delete;
+           DROP TRIGGER IF EXISTS books_fts_genres_insert;
+           DROP TRIGGER IF EXISTS books_fts_genres_delete;
+    `
+	_, err = db.Exec(triggerStmt)
+	if err != nil {
+		logger.Error("Failed to update triggers", "error", err)
+		panic(err)
+	}
+
+	r.syncGenreDisplayNames()
+
+	return r
+}
+
+func (r *Repo) CreateIndexes() error {
 	sqlStmt := `
            CREATE TABLE IF NOT EXISTS "authors" (
                author_id integer primary key autoincrement not null,
@@ -144,51 +199,26 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 
            CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, series, genre, book_id);
   	    `
+	_, err := r.db.Exec(sqlStmt)
+	return err
+}
 
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		logger.Error("Failed to execute schema", "error", err)
-		panic(err)
-	}
-
-	// Recreate triggers to ensure they are up-to-date
-	// Note: We only keep the basic insert/delete triggers for FTS.
-	// Author, series, and genre linking is handled by RebuildFTSIndex() after bulk imports.
-	triggerStmt := `
-           DROP TRIGGER IF EXISTS books_fts_insert;
-           CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN
-               INSERT INTO books_fts(title, author, series, genre, book_id)
-               VALUES (
-                 new.title,
-                 NULL,  -- Author will be populated by RebuildFTSIndex
-                 NULL,  -- Series will be populated by RebuildFTSIndex
-                 NULL,  -- Genre will be populated by RebuildFTSIndex
-                 new.book_id
-               );
-            END;
-
-           DROP TRIGGER IF EXISTS books_fts_delete;
-           CREATE TRIGGER books_fts_delete AFTER DELETE ON books BEGIN
-               DELETE FROM books_fts WHERE book_id = old.book_id;
-           END;
-
-           -- Drop old triggers that caused performance issues during bulk import
-           DROP TRIGGER IF EXISTS books_fts_authors_insert;
-           DROP TRIGGER IF EXISTS books_fts_authors_delete;
-           DROP TRIGGER IF EXISTS books_fts_series_insert;
-           DROP TRIGGER IF EXISTS books_fts_series_delete;
-           DROP TRIGGER IF EXISTS books_fts_genres_insert;
-           DROP TRIGGER IF EXISTS books_fts_genres_delete;
-    `
-	_, err = db.Exec(triggerStmt)
-	if err != nil {
-		logger.Error("Failed to update triggers", "error", err)
-		panic(err)
-	}
-
-	r.syncGenreDisplayNames()
-
-	return r
+func (r *Repo) DropIndexes() error {
+	// Drop non-unique performance indexes
+	sqlStmt := `
+		DROP INDEX IF EXISTS I_first_name;
+		DROP INDEX IF EXISTS I_last_name;
+		DROP INDEX IF EXISTS I_middle_name;
+		DROP INDEX IF EXISTS I_title;
+		DROP INDEX IF EXISTS I_book_id;
+		DROP INDEX IF EXISTS I_author_id;
+		DROP INDEX IF EXISTS idx_book_series_book_id;
+		DROP INDEX IF EXISTS idx_book_series_series_id;
+		DROP INDEX IF EXISTS idx_book_keywords_book_id;
+		DROP INDEX IF EXISTS idx_book_keywords_keyword_id;
+	`
+	_, err := r.db.Exec(sqlStmt)
+	return err
 }
 
 func (r *Repo) Close() error {

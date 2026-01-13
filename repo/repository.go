@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+
 	"github.com/htol/bopds/book"
 )
 
@@ -44,4 +45,6 @@ type Repository interface {
 
 	// RebuildFTSIndex rebuilds the full-text search index for all books
 	RebuildFTSIndex() error
+	CreateIndexes() error
+	DropIndexes() error
 }

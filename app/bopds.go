@@ -137,8 +137,19 @@ func (app *appEnv) run() error {
 				logger.Error("Error closing storage", "error", err)
 			}
 		}()
+		if err := storage.DropIndexes(); err != nil {
+			logger.Warn("Failed to drop indexes (continuing anyway)", "error", err)
+		} else {
+			logger.Info("Indexes dropped for performance")
+		}
+
 		if err := scanner.ScanLibrary(app.libraryPath, storage, app.config.Database.BatchSize); err != nil {
 			return err
+		}
+
+		logger.Info("Recreating indexes...")
+		if err := storage.CreateIndexes(); err != nil {
+			return fmt.Errorf("recreate indexes: %w", err)
 		}
 		// Rebuild FTS index to populate author, series, and genre fields
 		logger.Info("Rebuilding FTS index...")
