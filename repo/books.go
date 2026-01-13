@@ -141,25 +141,38 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
            CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
            CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
 
-           CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, book_id);
+           CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, series, book_id);
+  	    `
 
-           CREATE TRIGGER IF NOT EXISTS books_fts_insert AFTER INSERT ON books BEGIN
-               INSERT INTO books_fts(title, author, book_id)
+	_, err = db.Exec(sqlStmt)
+	if err != nil {
+		logger.Error("Failed to execute schema", "error", err)
+		panic(err)
+	}
+
+	// Recreate triggers to ensure they are up-to-date
+	triggerStmt := `
+           DROP TRIGGER IF EXISTS books_fts_insert;
+           CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN
+               INSERT INTO books_fts(title, author, series, book_id)
                VALUES (
                  new.title,
                  (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
                   FROM book_authors ba
                   LEFT JOIN authors a ON ba.author_id = a.author_id
                   WHERE ba.book_id = new.book_id),
+                 (SELECT s.name FROM book_series bs LEFT JOIN series s ON bs.series_id = s.series_id WHERE bs.book_id = new.book_id),
                  new.book_id
                );
             END;
 
-           CREATE TRIGGER IF NOT EXISTS books_fts_delete AFTER DELETE ON books BEGIN
+           DROP TRIGGER IF EXISTS books_fts_delete;
+           CREATE TRIGGER books_fts_delete AFTER DELETE ON books BEGIN
                DELETE FROM books_fts WHERE book_id = old.book_id;
            END;
 
-           CREATE TRIGGER IF NOT EXISTS books_fts_authors_insert AFTER INSERT ON book_authors BEGIN
+           DROP TRIGGER IF EXISTS books_fts_authors_insert;
+           CREATE TRIGGER books_fts_authors_insert AFTER INSERT ON book_authors BEGIN
                 UPDATE books_fts
                 SET author = (
                   SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
@@ -170,7 +183,8 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                 WHERE book_id = new.book_id;
            END;
 
-              CREATE TRIGGER IF NOT EXISTS books_fts_authors_delete AFTER DELETE ON book_authors BEGIN
+           DROP TRIGGER IF EXISTS books_fts_authors_delete;
+              CREATE TRIGGER books_fts_authors_delete AFTER DELETE ON book_authors BEGIN
                 UPDATE books_fts
                 SET author = (
                   SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
@@ -180,11 +194,29 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                 )
                 WHERE book_id = old.book_id;
               END;
-  	    `
 
-	_, err = db.Exec(sqlStmt)
+           DROP TRIGGER IF EXISTS books_fts_series_insert;
+           CREATE TRIGGER books_fts_series_insert AFTER INSERT ON book_series BEGIN
+                UPDATE books_fts
+                SET series = (
+                  SELECT s.name 
+                  FROM book_series bs 
+                  JOIN series s ON bs.series_id = s.series_id 
+                  WHERE bs.book_id = new.book_id
+                )
+                WHERE book_id = new.book_id;
+           END;
+
+           DROP TRIGGER IF EXISTS books_fts_series_delete;
+           CREATE TRIGGER books_fts_series_delete AFTER DELETE ON book_series BEGIN
+                UPDATE books_fts
+                SET series = NULL
+                WHERE book_id = old.book_id;
+           END;
+    `
+	_, err = db.Exec(triggerStmt)
 	if err != nil {
-		logger.Error("Failed to execute schema", "error", err)
+		logger.Error("Failed to update triggers", "error", err)
 		panic(err)
 	}
 
@@ -1201,7 +1233,8 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 // RebuildFTSIndex rebuilds the full-text search index for all books
 // Updates the author field in books_fts to include properly concatenated author names
 func (r *Repo) RebuildFTSIndex() error {
-	UPDATE_QUERY := `
+	// Update authors
+	UPDATE_AUTHORS := `
 		UPDATE books_fts
 		SET author = (
 			SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
@@ -1210,10 +1243,23 @@ func (r *Repo) RebuildFTSIndex() error {
 			WHERE ba.book_id = books_fts.book_id
 		)
 	`
+	if _, err := r.db.Exec(UPDATE_AUTHORS); err != nil {
+		return fmt.Errorf("rebuild FTS index (authors): %w", err)
+	}
 
-	result, err := r.db.Exec(UPDATE_QUERY)
+	// Update series
+	UPDATE_SERIES := `
+		UPDATE books_fts
+		SET series = (
+			SELECT s.name 
+            FROM book_series bs 
+            JOIN series s ON bs.series_id = s.series_id 
+            WHERE bs.book_id = books_fts.book_id
+		)
+	`
+	result, err := r.db.Exec(UPDATE_SERIES)
 	if err != nil {
-		return fmt.Errorf("rebuild FTS index: %w", err)
+		return fmt.Errorf("rebuild FTS index (series): %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()

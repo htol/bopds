@@ -49,8 +49,8 @@ func TestSearchBooks_NewFields(t *testing.T) {
 	// We need to make sure FTS is consistent.
 	// The Add function uses a transaction and triggers, so it should be fine.
 
-	// Perform search
-	results, err := db.SearchBooks(context.Background(), "Calculus", 10, 0)
+	// Perform search using SERIES NAME
+	results, err := db.SearchBooks(context.Background(), "Foundations", 10, 0)
 	if err != nil {
 		t.Fatalf("SearchBooks failed: %v", err)
 	}
