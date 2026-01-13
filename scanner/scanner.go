@@ -183,6 +183,9 @@ func parseInpEntry(entry []string) *book.Book {
 	for fieldIdx, field := range entry {
 		switch fieldIdx {
 		case flAuthor:
+			if len(field) == 0 {
+				break
+			}
 			list := strings.Split(field[:len(field)-1], listSep)
 			for _, entry := range list {
 				parts := strings.Split(entry, itemSep)
@@ -197,6 +200,9 @@ func parseInpEntry(entry []string) *book.Book {
 			}
 
 		case flGenre:
+			if len(field) == 0 {
+				break
+			}
 			genres := strings.Split(field[:len(field)-1], listSep)
 			bookEntry.Genres = genres
 
