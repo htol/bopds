@@ -146,6 +146,11 @@ func (app *appEnv) run() error {
 			logger.Warn("Failed to set fast mode", "error", err)
 		}
 
+		// Enable bulk import mode: 256MB cache, disabled WAL auto-checkpoint
+		if err := storage.SetBulkImportMode(true); err != nil {
+			logger.Warn("Failed to set bulk import mode", "error", err)
+		}
+
 		if err := storage.DropIndexes(); err != nil {
 			logger.Warn("Failed to drop indexes (continuing anyway)", "error", err)
 		} else {
@@ -161,16 +166,27 @@ func (app *appEnv) run() error {
 			return fmt.Errorf("recreate indexes: %w", err)
 		}
 
-		// Restore normal mode
-		if err := storage.SetFastMode(false); err != nil {
-			logger.Warn("Failed to restore normal mode", "error", err)
-		}
 		// Rebuild FTS index to populate author, series, and genre fields
 		logger.Info("Rebuilding FTS index...")
 		if err := storage.RebuildFTSIndex(); err != nil {
 			return fmt.Errorf("rebuild FTS index: %w", err)
 		}
 		logger.Info("FTS index rebuilt successfully")
+
+		// Restore normal mode
+		if err := storage.SetFastMode(false); err != nil {
+			logger.Warn("Failed to restore normal mode", "error", err)
+		}
+
+		// Disable bulk import mode and perform final checkpoint
+		if err := storage.SetBulkImportMode(false); err != nil {
+			logger.Warn("Failed to disable bulk import mode", "error", err)
+		}
+
+		// Checkpoint WAL to write all changes to disk
+		if err := storage.CheckpointWAL(); err != nil {
+			logger.Warn("Failed to checkpoint WAL", "error", err)
+		}
 	case "serve":
 		app.storage = storage
 		app.service = service.New(storage)
