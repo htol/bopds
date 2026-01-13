@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
@@ -149,6 +150,9 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 				}
 			}
 
+			log.Printf("Processing archive: %s", libArchiveFile)
+			startTime := time.Now()
+
 			content, err := archiveEntry.Open()
 			if err != nil {
 				log.Printf("Failed to read %s in zip: %s", archiveEntry.Name, err)
@@ -177,6 +181,7 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 			if err := scanner.Err(); err != nil {
 				log.Printf("Scanner error on %s: %s", archiveEntry.Name, err)
 			}
+			log.Printf("Finished processing %s in %v", libArchiveFile, time.Since(startTime))
 		}
 	}
 	return nil
