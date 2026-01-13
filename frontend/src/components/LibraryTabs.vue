@@ -22,8 +22,8 @@
     </nav>
 
     <!-- Content -->
-    <SearchView v-if="activeTab === 'Поиск'" />
-    <GenresView v-if="activeTab === 'Жанры'" />
+    <SearchView v-if="activeTab === 'Поиск'" :initial-query="pendingSearch" />
+    <GenresView v-if="activeTab === 'Жанры'" @select-genre="handleSelectGenre" />
   </div>
 </template>
 
@@ -35,6 +35,12 @@ import GenresView from '@/components/GenresView.vue'
 
 const tabs = ['Поиск', 'Жанры']
 const activeTab = ref('Поиск')
+const pendingSearch = ref('')
+
+const handleSelectGenre = (genre) => {
+  pendingSearch.value = genre
+  activeTab.value = 'Поиск'
+}
 
 const tabClasses = (tab) => {
   if (activeTab.value === tab) {
@@ -47,9 +53,14 @@ const tabClasses = (tab) => {
 // Update URL hash when switching tabs
 watch(activeTab, (newTab) => {
   if (newTab === 'Поиск') {
-    history.replaceState({ tab: newTab }, '', '#search')
+    history.replaceState({ tab: newTab }, '', '#search' + (pendingSearch.value ? `?q=${encodeURIComponent(pendingSearch.value)}` : ''))
   } else if (newTab === 'Жанры') {
     history.replaceState({ tab: newTab }, '', '#genres')
+  }
+
+  // Clear pending search after tab switch is handled
+  if (newTab !== 'Поиск') {
+    pendingSearch.value = ''
   }
 })
 

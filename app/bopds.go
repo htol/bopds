@@ -150,6 +150,15 @@ func (app *appEnv) run() error {
 				logger.Error("Error closing storage", "error", err)
 			}
 		}()
+	case "rebuild":
+		defer func() {
+			if err := storage.Close(); err != nil {
+				logger.Error("Error closing storage", "error", err)
+			}
+		}()
+		if err := storage.RebuildFTSIndex(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown command %s", app.cmd)
 	}
@@ -324,7 +333,6 @@ func getBooksByAuthorIDHandler(svc *service.Service) http.Handler {
 	}
 	return http.HandlerFunc(hf)
 }
-
 
 func searchBooksHandler(svc *service.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

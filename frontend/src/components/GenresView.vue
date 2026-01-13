@@ -22,6 +22,7 @@
       <div
         v-for="(genre, index) in genres"
         :key="genre"
+        @click="$emit('select-genre', genre)"
         class="group border border-gray-200 bg-white rounded-lg p-4 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer animate-snap-in"
         :style="{ animationDelay: `${index * 30}ms` }"
       >
@@ -62,6 +63,8 @@ const fetchGenres = async () => {
     isLoading.value = false
   }
 }
+
+const emit = defineEmits(['select-genre'])
 
 onMounted(fetchGenres)
 </script>

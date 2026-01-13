@@ -73,15 +73,16 @@ type Storager interface {
 // BookSearchResult represents a book search result with relevance ranking
 // Used for full-text search results with FTS5 ranking
 type BookSearchResult struct {
-	BookID     int64   `json:"book_id"`
-	Title      string  `json:"title"`
-	Author     string  `json:"author"`
-	Lang       string  `json:"lang,omitempty"`
-	Archive    string  `json:"archive,omitempty"`
-	FileName   string  `json:"filename,omitempty"`
-	Rank       float64 `json:"rank"` // FTS5 relevance score (higher = more relevant)
-	SeriesName string  `json:"series_name,omitempty"`
-	SeriesNo   int     `json:"series_no,omitempty"`
-	FileSize   int64   `json:"file_size,omitempty"`
-	Deleted    bool    `json:"deleted,omitempty"`
+	BookID     int64    `json:"book_id"`
+	Title      string   `json:"title"`
+	Author     string   `json:"author"`
+	Lang       string   `json:"lang,omitempty"`
+	Archive    string   `json:"archive,omitempty"`
+	FileName   string   `json:"filename,omitempty"`
+	Rank       float64  `json:"rank"` // FTS5 relevance score (higher = more relevant)
+	SeriesName string   `json:"series_name,omitempty"`
+	SeriesNo   int      `json:"series_no,omitempty"`
+	Genres     []string `json:"genres,omitempty"`
+	FileSize   int64    `json:"file_size,omitempty"`
+	Deleted    bool     `json:"deleted,omitempty"`
 }

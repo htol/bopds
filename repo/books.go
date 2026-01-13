@@ -99,7 +99,8 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 
            CREATE TABLE IF NOT EXISTS "genres" (
                genre_id integer primary key autoincrement not null,
-               name text unique not null
+               name text unique not null,
+               display_name text
            );
 
            CREATE TABLE IF NOT EXISTS "book_genres" (
@@ -141,7 +142,7 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
            CREATE INDEX IF NOT EXISTS [idx_book_keywords_book_id] ON [book_keywords] ([book_id]);
            CREATE INDEX IF NOT EXISTS [idx_book_keywords_keyword_id] ON [book_keywords] ([keyword_id]);
 
-           CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, series, book_id);
+           CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(title, author, series, genre, book_id);
   	    `
 
 	_, err = db.Exec(sqlStmt)
@@ -154,7 +155,7 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	triggerStmt := `
            DROP TRIGGER IF EXISTS books_fts_insert;
            CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN
-               INSERT INTO books_fts(title, author, series, book_id)
+               INSERT INTO books_fts(title, author, series, genre, book_id)
                VALUES (
                  new.title,
                  (SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
@@ -162,6 +163,7 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                   LEFT JOIN authors a ON ba.author_id = a.author_id
                   WHERE ba.book_id = new.book_id),
                  (SELECT s.name FROM book_series bs LEFT JOIN series s ON bs.series_id = s.series_id WHERE bs.book_id = new.book_id),
+                 (SELECT group_concat(coalesce(g.display_name, g.name), ' | ') FROM book_genres bg JOIN genres g ON bg.genre_id = g.genre_id WHERE bg.book_id = new.book_id),
                  new.book_id
                );
             END;
@@ -213,12 +215,38 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
                 SET series = NULL
                 WHERE book_id = old.book_id;
            END;
+
+           DROP TRIGGER IF EXISTS books_fts_genres_insert;
+           CREATE TRIGGER books_fts_genres_insert AFTER INSERT ON book_genres BEGIN
+                UPDATE books_fts
+                SET genre = (
+                  SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
+                  FROM book_genres bg
+                  JOIN genres g ON bg.genre_id = g.genre_id
+                  WHERE bg.book_id = new.book_id
+                )
+                WHERE book_id = new.book_id;
+           END;
+
+           DROP TRIGGER IF EXISTS books_fts_genres_delete;
+           CREATE TRIGGER books_fts_genres_delete AFTER DELETE ON book_genres BEGIN
+                UPDATE books_fts
+                SET genre = (
+                  SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
+                  FROM book_genres bg
+                  JOIN genres g ON bg.genre_id = g.genre_id
+                  WHERE bg.book_id = old.book_id
+                )
+                WHERE book_id = old.book_id;
+           END;
     `
 	_, err = db.Exec(triggerStmt)
 	if err != nil {
 		logger.Error("Failed to update triggers", "error", err)
 		panic(err)
 	}
+
+	r.syncGenreDisplayNames()
 
 	return r
 }
@@ -959,12 +987,12 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 
 func (r *Repo) GetGenres() ([]string, error) {
 	QUERY := `
-		SELECT DISTINCT g.name 
+		SELECT DISTINCT g.display_name
 		FROM genres g
 		JOIN book_genres bg ON g.genre_id = bg.genre_id
 		JOIN books b ON bg.book_id = b.book_id
-		WHERE b.deleted = 0
-		ORDER BY g.name
+		WHERE b.deleted = 0 AND g.display_name IS NOT NULL
+		ORDER BY g.display_name
 	`
 
 	rows, err := r.db.Query(QUERY)
@@ -1234,13 +1262,16 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 			s.name as series_name,
 			bs.series_no,
 			fts.rank,
-			group_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author
+			group_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,
+			group_concat(distinct g.display_name) as genres
 		FROM books_fts fts
 		JOIN books b ON fts.book_id = b.book_id
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN book_genres bg ON b.book_id = bg.book_id
+		LEFT JOIN genres g ON bg.genre_id = g.genre_id
 		WHERE books_fts MATCH ? AND b.deleted = 0
 		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank
 		ORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE
@@ -1258,11 +1289,12 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		var r book.BookSearchResult
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var genresStr sql.NullString
 
 		err := rows.Scan(
 			&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName,
 			&r.FileSize, &r.Deleted, &seriesName, &seriesNo,
-			&r.Rank, &r.Author,
+			&r.Rank, &r.Author, &genresStr,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)
@@ -1273,6 +1305,9 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		}
 		if seriesNo.Valid {
 			r.SeriesNo = int(seriesNo.Int64)
+		}
+		if genresStr.Valid {
+			r.Genres = strings.Split(genresStr.String, ",")
 		}
 
 		results = append(results, r)
@@ -1287,37 +1322,99 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 // RebuildFTSIndex rebuilds the full-text search index for all books
 // Updates the author field in books_fts to include properly concatenated author names
 func (r *Repo) RebuildFTSIndex() error {
-	// Update authors
-	UPDATE_AUTHORS := `
-		UPDATE books_fts
-		SET author = (
-			SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
-			FROM book_authors ba
-			LEFT JOIN authors a ON ba.author_id = a.author_id
-			WHERE ba.book_id = books_fts.book_id
-		)
-	`
-	if _, err := r.db.Exec(UPDATE_AUTHORS); err != nil {
-		return fmt.Errorf("rebuild FTS index (authors): %w", err)
+	// Rebuild FTS index from scratch
+	// 1. Clear FTS table
+	if _, err := r.db.Exec("DELETE FROM books_fts"); err != nil {
+		return fmt.Errorf("rebuild FTS index (delete): %w", err)
 	}
 
-	// Update series
-	UPDATE_SERIES := `
-		UPDATE books_fts
-		SET series = (
-			SELECT s.name 
-            FROM book_series bs 
-            JOIN series s ON bs.series_id = s.series_id 
-            WHERE bs.book_id = books_fts.book_id
-		)
+	// 2. Insert all books with their metadata
+	QUERY := `
+		INSERT INTO books_fts(title, author, series, genre, book_id)
+		SELECT 
+			b.title,
+			(SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ') 
+			 FROM book_authors ba 
+			 JOIN authors a ON ba.author_id = a.author_id 
+			 WHERE ba.book_id = b.book_id),
+			(SELECT s.name 
+			 FROM book_series bs 
+			 JOIN series s ON bs.series_id = s.series_id 
+			 WHERE bs.book_id = b.book_id),
+			(SELECT group_concat(coalesce(g.display_name, g.name), ' | ') 
+			 FROM book_genres bg 
+			 JOIN genres g ON bg.genre_id = g.genre_id 
+			 WHERE bg.book_id = b.book_id),
+			b.book_id
+		FROM books b
+		WHERE b.deleted = 0
 	`
-	result, err := r.db.Exec(UPDATE_SERIES)
+	result, err := r.db.Exec(QUERY)
 	if err != nil {
-		return fmt.Errorf("rebuild FTS index (series): %w", err)
+		return fmt.Errorf("rebuild FTS index (insert): %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	logger.Info("FTS index rebuilt", "rows_updated", rowsAffected)
 
 	return nil
+}
+
+func (r *Repo) syncGenreDisplayNames() {
+	rows, err := r.db.Query(`SELECT name, display_name FROM genres`)
+	if err != nil {
+		logger.Error("Failed to query genres for update", "error", err)
+		return
+	}
+
+	type genreUpdate struct {
+		name        string
+		displayName string
+	}
+	var updates []genreUpdate
+
+	for rows.Next() {
+		var name string
+		var currentDN sql.NullString
+		if err := rows.Scan(&name, &currentDN); err == nil {
+			displayName := MapGenre(name)
+			if displayName != name && (!currentDN.Valid || currentDN.String != displayName) {
+				updates = append(updates, genreUpdate{name, displayName})
+			}
+		}
+	}
+	rows.Close()
+
+	if len(updates) == 0 {
+		return
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		logger.Error("Failed to begin transaction for genre update", "error", err)
+		return
+	}
+
+	stmt, err := tx.Prepare(`UPDATE genres SET display_name = ? WHERE name = ?`)
+	if err != nil {
+		logger.Error("Failed to prepare statement for genre update", "error", err)
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	count := 0
+	for _, u := range updates {
+		if _, err := stmt.Exec(u.displayName, u.name); err != nil {
+			logger.Error("Failed to execute genre update", "error", err, "name", u.name)
+		} else {
+			count++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("Failed to commit genre updates", "error", err)
+	} else if count > 0 {
+		logger.Info("Updated genre display names", "new_count", count)
+	}
 }

@@ -76,6 +76,13 @@ import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
 import { api, downloadBook } from '@/api'
 
+const props = defineProps({
+  initialQuery: {
+    type: String,
+    default: ''
+  }
+})
+
 // State
 const searchQuery = ref('')
 const results = ref([])
@@ -197,6 +204,12 @@ const handleDownload = async (bookId, format) => {
 
 // Lifecycle hooks
 onMounted(() => {
+  // Setup initial state from props
+  if (props.initialQuery) {
+    searchQuery.value = props.initialQuery
+    handleSearch(props.initialQuery)
+  }
+
   // Setup intersection observer after next tick
   setTimeout(() => {
     setupIntersectionObserver()
