@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -468,7 +469,13 @@ func (r *Repo) getOrCreateAuthor(authors []book.Author) ([]int64, error) {
 }
 
 func (r *Repo) GetAuthors() ([]book.Author, error) {
-	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors`
+	QUERY := `
+		SELECT DISTINCT a.author_id, a.first_name, a.middle_name, a.last_name
+		FROM authors a
+		JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN books b ON ba.book_id = b.book_id
+		WHERE b.deleted = 0
+	`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -494,7 +501,15 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 
 func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	pattern := strings.Title(letters) + "%"
-	QUERY := `SELECT author_id, first_name, middle_name, last_name FROM authors WHERE last_name LIKE ? COLLATE NOCASE ORDER BY last_name`
+	QUERY := `
+		SELECT DISTINCT a.author_id, a.first_name, a.middle_name, a.last_name 
+		FROM authors a
+		JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN books b ON ba.book_id = b.book_id
+		WHERE a.last_name LIKE ? COLLATE NOCASE 
+		AND b.deleted = 0
+		ORDER BY a.last_name
+	`
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
@@ -521,9 +536,11 @@ func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 func (r *Repo) GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, error) {
 	QUERY := `
 		SELECT a.author_id, a.first_name, a.middle_name, a.last_name,
-			   COUNT(ba.book_id) as book_count
+			   COUNT(b.book_id) as book_count
 		FROM authors a
-		LEFT JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN books b ON ba.book_id = b.book_id
+		WHERE b.deleted = 0
 		GROUP BY a.author_id, a.first_name, a.middle_name, a.last_name
 		ORDER BY a.last_name
 	`
@@ -553,10 +570,12 @@ func (r *Repo) GetAuthorsWithBookCountByLetter(letters string) ([]book.AuthorWit
 	pattern := strings.Title(letters) + "%"
 	QUERY := `
 		SELECT a.author_id, a.first_name, a.middle_name, a.last_name,
-			   COUNT(ba.book_id) as book_count
+			   COUNT(b.book_id) as book_count
 		FROM authors a
-		LEFT JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN book_authors ba ON a.author_id = ba.author_id
+		JOIN books b ON ba.book_id = b.book_id
 		WHERE a.last_name LIKE ? COLLATE NOCASE
+		AND b.deleted = 0
 		GROUP BY a.author_id, a.first_name, a.middle_name, a.last_name
 		ORDER BY a.last_name
 	`
@@ -638,7 +657,19 @@ func (r *Repo) GetBooks() ([]string, error) {
 
 func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	pattern := strings.Title(letters) + "%"
-	QUERY := `SELECT book_id, Title FROM books WHERE title LIKE ? COLLATE NOCASE AND deleted = 0 ORDER BY title`
+	QUERY := `
+		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
+			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
+			   a.first_name, a.middle_name, a.last_name,
+			   s.series_id, s.name, bs.series_no
+		FROM books b
+		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
+		LEFT JOIN authors a ON ba.author_id = a.author_id
+		LEFT JOIN book_series bs ON b.book_id = bs.book_id
+		LEFT JOIN series s ON bs.series_id = s.series_id
+		WHERE b.title LIKE ? COLLATE NOCASE AND b.deleted = 0
+		ORDER BY b.title
+	`
 
 	rows, err := r.db.Query(QUERY, pattern)
 	if err != nil {
@@ -646,18 +677,94 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	}
 	defer rows.Close()
 
-	books := make([]book.Book, 0)
+	booksMap := make(map[int64]*book.Book)
 	for rows.Next() {
-		var a book.Book
+		var b book.Book
+		var author book.Author
+		var firstName, middleName, lastName sql.NullString
+		var deleted bool
+		var libRate sql.NullInt64
+		var seriesID sql.NullInt64
+		var seriesName sql.NullString
+		var seriesNo sql.NullInt64
 
-		if err := rows.Scan(&a.BookID, &a.Title); err != nil {
+		if err := rows.Scan(
+			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
+			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
+			&firstName, &middleName, &lastName,
+			&seriesID, &seriesName, &seriesNo,
+		); err != nil {
 			return nil, fmt.Errorf("scan book by letter: %w", err)
 		}
-		books = append(books, a)
+
+		b.Deleted = deleted
+		if libRate.Valid {
+			b.LibRate = int(libRate.Int64)
+		}
+
+		// Helper to construct series info
+		var seriesInfo *book.SeriesInfo
+		if seriesName.Valid {
+			seriesInfo = &book.SeriesInfo{
+				ID:       seriesID.Int64,
+				Name:     seriesName.String,
+				SeriesNo: int(seriesNo.Int64),
+			}
+		}
+
+		if existingBook, ok := booksMap[b.BookID]; ok {
+			// Check if author is new
+			isNewAuthor := true
+			for _, a := range existingBook.Author {
+				if a.FirstName == firstName.String && a.LastName == lastName.String {
+					isNewAuthor = false
+					break
+				}
+			}
+
+			if isNewAuthor && (firstName.Valid || middleName.Valid || lastName.Valid) {
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				existingBook.Author = append(existingBook.Author, author)
+			}
+
+			// If series is missing, add it
+			if existingBook.Series == nil && seriesInfo != nil {
+				existingBook.Series = seriesInfo
+			}
+		} else {
+			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				b.Author = []book.Author{author}
+			}
+			if seriesInfo != nil {
+				b.Series = seriesInfo
+			}
+			booksMap[b.BookID] = &b
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate books by letter: %w", err)
 	}
+
+	// Maps are unordered, but we want to respect the SQL ORDER BY title.
+	// However, since we used a map, order is lost. We need to re-sort or maintain order.
+	// Simpler approach: Create a slice of IDs in order, then build result.
+	// Or, since we're only fetching by letter, we can sort the final slice.
+
+	books := make([]book.Book, 0, len(booksMap))
+	for _, book := range booksMap {
+		books = append(books, *book)
+	}
+
+	// Re-sort in Go to be fast and correct (since map randomization)
+	// Sort by Title
+	sort.Slice(books, func(i, j int) bool {
+		return strings.ToLower(books[i].Title) < strings.ToLower(books[j].Title)
+	})
 
 	return books, nil
 }
@@ -666,10 +773,13 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
-			   a.first_name, a.middle_name, a.last_name
+			   a.first_name, a.middle_name, a.last_name,
+			   s.series_id, s.name, bs.series_no
 		FROM books b
 		JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
+		LEFT JOIN book_series bs ON b.book_id = bs.book_id
+		LEFT JOIN series s ON bs.series_id = s.series_id
 		WHERE ba.author_id = ? AND b.deleted = 0
 		ORDER BY b.title
 	`
@@ -687,10 +797,16 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		var firstName, middleName, lastName sql.NullString
 		var deleted bool
 		var libRate sql.NullInt64
+		var seriesID sql.NullInt64
+		var seriesName sql.NullString
+		var seriesNo sql.NullInt64
 
-		if err := rows.Scan(&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
+		if err := rows.Scan(
+			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
-			&firstName, &middleName, &lastName); err != nil {
+			&firstName, &middleName, &lastName,
+			&seriesID, &seriesName, &seriesNo,
+		); err != nil {
 			return nil, fmt.Errorf("scan book by author id: %w", err)
 		}
 
@@ -699,13 +815,38 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 			b.LibRate = int(libRate.Int64)
 		}
 
+		// Helper to construct series info
+		var seriesInfo *book.SeriesInfo
+		if seriesName.Valid {
+			seriesInfo = &book.SeriesInfo{
+				ID:       seriesID.Int64,
+				Name:     seriesName.String,
+				SeriesNo: int(seriesNo.Int64),
+			}
+		}
+
 		if existingBook, ok := booksMap[b.BookID]; ok {
-			if firstName.Valid || middleName.Valid || lastName.Valid {
+			// Check if author is new (avoid duplicates if multiple series rows caused duplication)
+			isNewAuthor := true
+			for _, a := range existingBook.Author {
+				if a.FirstName == firstName.String && a.LastName == lastName.String {
+					isNewAuthor = false
+					break
+				}
+			}
+
+			if isNewAuthor && (firstName.Valid || middleName.Valid || lastName.Valid) {
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
 				author.LastName = lastName.String
 				existingBook.Author = append(existingBook.Author, author)
 			}
+
+			// If series is missing, add it
+			if existingBook.Series == nil && seriesInfo != nil {
+				existingBook.Series = seriesInfo
+			}
+
 		} else {
 			if firstName.Valid || middleName.Valid || lastName.Valid {
 				author.FirstName = firstName.String
@@ -713,9 +854,13 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 				author.LastName = lastName.String
 				b.Author = []book.Author{author}
 			}
+			if seriesInfo != nil {
+				b.Series = seriesInfo
+			}
 			booksMap[b.BookID] = &b
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate books by author id: %w", err)
 	}
@@ -729,7 +874,14 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 }
 
 func (r *Repo) GetGenres() ([]string, error) {
-	QUERY := `SELECT name FROM genres ORDER BY name`
+	QUERY := `
+		SELECT DISTINCT g.name 
+		FROM genres g
+		JOIN book_genres bg ON g.genre_id = bg.genre_id
+		JOIN books b ON bg.book_id = b.book_id
+		WHERE b.deleted = 0
+		ORDER BY g.name
+	`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -757,7 +909,7 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 		SELECT book_id, title, lang, archive, filename,
 			   file_size, date_added, lib_id, deleted, lib_rate
 		FROM books
-		WHERE book_id = ?
+		WHERE book_id = ? AND deleted = 0
 	`
 
 	var b book.Book
@@ -868,7 +1020,14 @@ func (r *Repo) fetchBookDetails(b *book.Book) error {
 
 // GetSeries Get all series
 func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
-	QUERY := `SELECT series_id, name FROM series ORDER BY name`
+	QUERY := `
+		SELECT DISTINCT s.series_id, s.name 
+		FROM series s
+		JOIN book_series bs ON s.series_id = bs.series_id
+		JOIN books b ON bs.book_id = b.book_id
+		WHERE b.deleted = 0
+		ORDER BY s.name
+	`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -931,7 +1090,14 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 
 // GetKeywords Get all keywords
 func (r *Repo) GetKeywords() ([]book.Keyword, error) {
-	QUERY := `SELECT keyword_id, name FROM keywords ORDER BY name`
+	QUERY := `
+		SELECT DISTINCT k.keyword_id, k.name 
+		FROM keywords k
+		JOIN book_keywords bk ON k.keyword_id = bk.keyword_id
+		JOIN books b ON bk.book_id = b.book_id
+		WHERE b.deleted = 0
+		ORDER BY k.name
+	`
 
 	rows, err := r.db.Query(QUERY)
 	if err != nil {
@@ -977,14 +1143,20 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 			b.lang,
 			b.archive,
 			b.filename,
+			b.file_size,
+			b.deleted,
+			s.name as series_name,
+			bs.series_no,
 			fts.rank,
-			group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ') as author
+			group_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author
 		FROM books_fts fts
 		JOIN books b ON fts.book_id = b.book_id
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
+		LEFT JOIN book_series bs ON b.book_id = bs.book_id
+		LEFT JOIN series s ON bs.series_id = s.series_id
 		WHERE books_fts MATCH ? AND b.deleted = 0
-		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, fts.rank
+		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank
 		ORDER BY fts.rank, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
 	`
@@ -998,9 +1170,23 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 	results := make([]book.BookSearchResult, 0)
 	for rows.Next() {
 		var r book.BookSearchResult
-		err := rows.Scan(&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName, &r.Rank, &r.Author)
+		var seriesName sql.NullString
+		var seriesNo sql.NullInt64
+
+		err := rows.Scan(
+			&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName,
+			&r.FileSize, &r.Deleted, &seriesName, &seriesNo,
+			&r.Rank, &r.Author,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)
+		}
+
+		if seriesName.Valid {
+			r.SeriesName = seriesName.String
+		}
+		if seriesNo.Valid {
+			r.SeriesNo = int(seriesNo.Int64)
 		}
 
 		results = append(results, r)

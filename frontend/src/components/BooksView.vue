@@ -59,7 +59,7 @@
 
     <!-- Books List -->
     <div v-else class="space-y-3 mb-8">
-      <BookCard
+      <UniversalBookCard
         v-for="(book, index) in paginatedBooks"
         :key="book.book_id"
         :book="book"
@@ -91,7 +91,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AlphabetsFilter from '@/components/AlphabetsFilter.vue'
 import Paginator from '@/components/Paginator.vue'
 import SearchInput from '@/components/SearchInput.vue'
-import BookCard from '@/components/domain/BookCard.vue'
+import UniversalBookCard from '@/components/domain/UniversalBookCard.vue'
 import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseBadge from '@/components/base/BaseBadge.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'

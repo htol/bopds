@@ -8,7 +8,12 @@ import (
 	"testing"
 
 	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/logger"
 )
+
+func init() {
+	logger.Init("info")
+}
 
 func TestGetOrCreateAuthor(t *testing.T) {
 	os.Remove("./test.db")

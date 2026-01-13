@@ -26,11 +26,12 @@
 
     <!-- Search Results -->
     <div v-else class="space-y-3">
-      <SearchResultItem
+      <UniversalBookCard
         v-for="result in results"
         :key="result.book_id"
-        :result="result"
+        :book="result"
         :search-query="searchQuery"
+        @download="handleDownload"
         @click="handleResultClick"
       />
 
@@ -70,10 +71,10 @@
 import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import SearchInput from '@/components/SearchInput.vue'
-import SearchResultItem from '@/components/domain/SearchResultItem.vue'
+import UniversalBookCard from '@/components/domain/UniversalBookCard.vue'
 import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
-import { api } from '@/api'
+import { api, downloadBook } from '@/api'
 
 // State
 const searchQuery = ref('')
@@ -183,6 +184,15 @@ const setupIntersectionObserver = () => {
 const handleResultClick = (result) => {
   // TODO: Implement click behavior when needed
   console.log('Clicked result:', result)
+}
+
+const handleDownload = async (bookId, format) => {
+  try {
+    await downloadBook(bookId, format)
+  } catch (err) {
+    console.error('Download failed:', err)
+    // Could show a toast notification here
+  }
 }
 
 // Lifecycle hooks

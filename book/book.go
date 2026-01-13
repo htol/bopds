@@ -18,11 +18,11 @@ type AuthorWithID struct {
 
 // AuthorWithBookCount represents an author with their book count
 type AuthorWithBookCount struct {
-	ID         int64    `json:"ID"`
-	FirstName  string   `json:"FirstName"`
-	MiddleName string   `json:"MiddleName"`
-	LastName   string   `json:"LastName"`
-	BookCount  int      `json:"BookCount"`
+	ID         int64  `json:"ID"`
+	FirstName  string `json:"FirstName"`
+	MiddleName string `json:"MiddleName"`
+	LastName   string `json:"LastName"`
+	BookCount  int    `json:"BookCount"`
 }
 
 type Book struct {
@@ -36,13 +36,13 @@ type Book struct {
 	FileName string
 
 	// ===== NEW FIELDS FROM INPX =====
-	FileSize  int64       `json:"file_size,omitempty"`   // flSize
-	DateAdded string      `json:"date_added,omitempty"`  // flDate (YYYY-MM-DD)
-	LibID     int64       `json:"lib_id,omitempty"`      // flLibID
-	Deleted   bool        `json:"deleted,omitempty"`     // flDeleted
-	LibRate   int         `json:"lib_rate,omitempty"`    // flLibRate
-	Series    *SeriesInfo `json:"series,omitempty"`      // flSeries + flSerNo
-	Keywords  []string    `json:"keywords,omitempty"`    // flKeyWords
+	FileSize  int64       `json:"file_size,omitempty"`  // flSize
+	DateAdded string      `json:"date_added,omitempty"` // flDate (YYYY-MM-DD)
+	LibID     int64       `json:"lib_id,omitempty"`     // flLibID
+	Deleted   bool        `json:"deleted,omitempty"`    // flDeleted
+	LibRate   int         `json:"lib_rate,omitempty"`   // flLibRate
+	Series    *SeriesInfo `json:"series,omitempty"`     // flSeries + flSerNo
+	Keywords  []string    `json:"keywords,omitempty"`   // flKeyWords
 }
 
 // SeriesInfo represents series information
@@ -73,11 +73,15 @@ type Storager interface {
 // BookSearchResult represents a book search result with relevance ranking
 // Used for full-text search results with FTS5 ranking
 type BookSearchResult struct {
-	BookID    int64   `json:"book_id"`
-	Title     string  `json:"title"`
-	Author    string  `json:"author"`
-	Lang      string  `json:"lang,omitempty"`
-	Archive   string  `json:"archive,omitempty"`
-	FileName  string  `json:"filename,omitempty"`
-	Rank      float64 `json:"rank"` // FTS5 relevance score (higher = more relevant)
+	BookID     int64   `json:"book_id"`
+	Title      string  `json:"title"`
+	Author     string  `json:"author"`
+	Lang       string  `json:"lang,omitempty"`
+	Archive    string  `json:"archive,omitempty"`
+	FileName   string  `json:"filename,omitempty"`
+	Rank       float64 `json:"rank"` // FTS5 relevance score (higher = more relevant)
+	SeriesName string  `json:"series_name,omitempty"`
+	SeriesNo   int     `json:"series_no,omitempty"`
+	FileSize   int64   `json:"file_size,omitempty"`
+	Deleted    bool    `json:"deleted,omitempty"`
 }
