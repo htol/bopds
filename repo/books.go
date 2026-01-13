@@ -59,6 +59,23 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetime) * time.Second)
 
+	// Performance optimizations
+	// 1. Memory Mapped I/O: Map up to 30GB. If file is smaller, maps entire file.
+	if _, err := db.Exec("PRAGMA mmap_size = 30000000000"); err != nil {
+		logger.Warn("Failed to set mmap_size", "error", err)
+	}
+
+	// 2. Cache Size: -64000 means 64MB of cache. Positive would be N pages.
+	// 64MB is a safe conservative default.
+	if _, err := db.Exec("PRAGMA cache_size = -64000"); err != nil {
+		logger.Warn("Failed to set cache_size", "error", err)
+	}
+
+	// 3. Temporary Store: Use RAM for temp tables/indices (critical for sorting during CREATE INDEX)
+	if _, err := db.Exec("PRAGMA temp_store = MEMORY"); err != nil {
+		logger.Warn("Failed to set temp_store", "error", err)
+	}
+
 	r.db = db
 
 	// Create tables first (without indexes for authors/books to allow fast bulk insert option)
