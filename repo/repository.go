@@ -41,4 +41,7 @@ type Repository interface {
 	Add(record *book.Book) error
 	Search() error
 	List() error
+
+	// RebuildFTSIndex rebuilds the full-text search index for all books
+	RebuildFTSIndex() error
 }

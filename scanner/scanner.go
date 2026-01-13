@@ -101,10 +101,6 @@ func ScanLibrary(basedir string, storage Storager) error {
 
 	wg.Wait()
 
-	//if err = checkFilesContent(files); err != nil {
-	//	return err
-	//}
-
 	return nil
 }
 
@@ -275,7 +271,6 @@ func parseInpEntry(entry []string) *book.Book {
 
 // Helper function to parse keywords
 func parseKeywords(field string) []string {
-	// Check if field contains commas - prioritize comma separation
 	trimmed := strings.TrimSpace(field)
 	if trimmed == "" {
 		return []string{}
@@ -288,7 +283,6 @@ func parseKeywords(field string) []string {
 		parts = strings.Fields(trimmed)
 	}
 
-	// Filter empty strings
 	var result []string
 	for _, p := range parts {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
@@ -300,9 +294,7 @@ func parseKeywords(field string) []string {
 
 func checkFilesContent(files []string) error {
 	for _, file := range files {
-		//fmt.Printf("Working on file: %d %s\n", idx, file)
 		if strings.HasSuffix(file, ".zip") {
-			//log.Println("archive found")
 			arch, err := zip.OpenReader(file)
 			if err != nil {
 				return fmt.Errorf("open zip %s: %w", file, err)
@@ -310,7 +302,6 @@ func checkFilesContent(files []string) error {
 			defer arch.Close()
 
 			for _, entry := range arch.File {
-				//log.Printf("entry: %+v", entry.Name)
 				content, err := entry.Open()
 				if err != nil {
 					log.Printf("Failed to read %s in zip: %s", entry.Name, err)
@@ -324,7 +315,6 @@ func checkFilesContent(files []string) error {
 			}
 
 		} else if strings.HasSuffix(file, ".fb2") {
-			// TODO: check if it's zipped
 
 			book, err := os.Open(file)
 			if err != nil {
@@ -345,7 +335,6 @@ func bookReader(bookContent io.ReadCloser) error {
 	decoder := xml.NewDecoder(bookContent)
 	decoder.CharsetReader = charset.NewReaderLabel
 
-	// TODO: have to detect file content xml in fb2, zip with fb2 files or zip in fb2 file before loop
 	var b book.Book
 
 	for t, err := decoder.Token(); t != nil; t, err = decoder.Token() {
@@ -355,7 +344,6 @@ func bookReader(bookContent io.ReadCloser) error {
 
 		switch se := t.(type) {
 		case xml.StartElement:
-			// fmt.Printf("s: %+v\n", se.Name.Local)
 			if se.Name.Local == "title-info" {
 				err = decoder.DecodeElement(&b, &se)
 				if err != nil {
@@ -376,13 +364,6 @@ func bookReader(bookContent io.ReadCloser) error {
 		fmt.Println("   ---   Title not found")
 		return nil
 	}
-
-	// fmt.Printf("reuslt: %+v\n", b)
-	//	fmt.Printf("Autor: %s %s, Title: %s, Lang: %s\n",
-	//		b.Author.FirstName,
-	//		b.Author.LastName,
-	//		b.Title,
-	//		b.Lang)
 
 	return nil
 }
