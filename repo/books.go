@@ -1015,11 +1015,11 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
 	pattern := strings.Title(letters) + "%"
 	QUERY := `
-		SELECT DISTINCT a.author_id, a.first_name, a.middle_name, a.last_name 
+		SELECT DISTINCT a.author_id, a.first_name, a.middle_name, a.last_name
 		FROM authors a
 		JOIN book_authors ba ON a.author_id = ba.author_id
 		JOIN books b ON ba.book_id = b.book_id
-		WHERE a.last_name LIKE ? COLLATE NOCASE 
+		WHERE a.last_name LIKE ? COLLATE NOCASE
 		AND b.deleted = 0
 		ORDER BY a.last_name
 	`
@@ -1586,7 +1586,7 @@ func (r *Repo) fetchBookDetails(b *book.Book) error {
 // GetSeries Get all series
 func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
 	QUERY := `
-		SELECT DISTINCT s.series_id, s.name 
+		SELECT DISTINCT s.series_id, s.name
 		FROM series s
 		JOIN book_series bs ON s.series_id = bs.series_id
 		JOIN books b ON bs.book_id = b.book_id
@@ -1658,7 +1658,7 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 // GetKeywords Get all keywords
 func (r *Repo) GetKeywords() ([]book.Keyword, error) {
 	QUERY := `
-		SELECT DISTINCT k.keyword_id, k.name 
+		SELECT DISTINCT k.keyword_id, k.name
 		FROM keywords k
 		JOIN book_keywords bk ON k.keyword_id = bk.keyword_id
 		JOIN books b ON bk.book_id = b.book_id
@@ -1743,16 +1743,20 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
 		var genresStr sql.NullString
+		var authorStr sql.NullString
 
 		err := rows.Scan(
 			&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName,
 			&r.FileSize, &r.Deleted, &seriesName, &seriesNo,
-			&r.Rank, &r.Author, &genresStr,
+			&r.Rank, &authorStr, &genresStr,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)
 		}
 
+		if authorStr.Valid {
+			r.Author = authorStr.String
+		}
 		if seriesName.Valid {
 			r.SeriesName = seriesName.String
 		}
@@ -1784,19 +1788,19 @@ func (r *Repo) RebuildFTSIndex() error {
 	// 2. Insert all books with their metadata
 	QUERY := `
 		INSERT INTO books_fts(title, author, series, genre, book_id)
-		SELECT 
+		SELECT
 			b.title,
-			(SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ') 
-			 FROM book_authors ba 
-			 JOIN authors a ON ba.author_id = a.author_id 
+			(SELECT group_concat(a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, ''), ' | ')
+			 FROM book_authors ba
+			 JOIN authors a ON ba.author_id = a.author_id
 			 WHERE ba.book_id = b.book_id),
-			(SELECT s.name 
-			 FROM book_series bs 
-			 JOIN series s ON bs.series_id = s.series_id 
+			(SELECT s.name
+			 FROM book_series bs
+			 JOIN series s ON bs.series_id = s.series_id
 			 WHERE bs.book_id = b.book_id),
-			(SELECT group_concat(coalesce(g.display_name, g.name), ' | ') 
-			 FROM book_genres bg 
-			 JOIN genres g ON bg.genre_id = g.genre_id 
+			(SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
+			 FROM book_genres bg
+			 JOIN genres g ON bg.genre_id = g.genre_id
 			 WHERE bg.book_id = b.book_id),
 			b.book_id
 		FROM books b
