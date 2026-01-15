@@ -282,37 +282,6 @@ func TestGetBooksByLetterHandler_Success(t *testing.T) {
 	}
 }
 
-func TestGetBooksHandler_Success(t *testing.T) {
-	req := httptest.NewRequest("GET", "/b", nil)
-	w := httptest.NewRecorder()
-
-	storage := repo.GetStorage(":memory:")
-	defer func() {
-		if err := storage.Close(); err != nil {
-			t.Logf("Error closing storage: %v", err)
-		}
-	}()
-	svc := service.New(storage)
-	handler := getBooksHandler(svc)
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
-	}
-
-	// Check response is plain text (not JSON)
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "" {
-		t.Errorf("Expected no Content-Type for plain text, got %q", contentType)
-	}
-
-	// Check body is empty (no books in :memory: db)
-	body := w.Body.String()
-	if body != "" {
-		t.Errorf("Expected empty body, got %q", body)
-	}
-}
-
 // testError is a simple error type for testing
 type testError struct {
 	msg string

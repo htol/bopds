@@ -283,8 +283,6 @@ func router(svc *service.Service) http.Handler {
 
 	// Frontend and JSON API routes
 	mux.Handle("/", indexHandler())
-	mux.HandleFunc("/a", getAuthorsHandler(svc))
-	mux.HandleFunc("/b", getBooksHandler(svc))
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
 	mux.Handle("/api/authors/", withCORS(authorsAPIHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
@@ -305,20 +303,6 @@ func router(svc *service.Service) http.Handler {
 
 func indexHandler() http.Handler {
 	return http.FileServer(http.Dir("./frontend/dist"))
-}
-
-func getAuthorsHandler(svc *service.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		authors, err := svc.GetAuthors(ctx)
-		if err != nil {
-			respondWithError(w, "Failed to get authors", err, http.StatusInternalServerError)
-			return
-		}
-		for _, author := range authors {
-			fmt.Fprintf(w, "%s, %s, %s\n", author.FirstName, author.MiddleName, author.LastName)
-		}
-	}
 }
 
 func getAuthorsByLetterHandler(svc *service.Service) http.Handler {
@@ -460,21 +444,6 @@ func authorsAPIHandler(svc *service.Service) http.Handler {
 		}
 	}
 	return http.HandlerFunc(hf)
-}
-
-func getBooksHandler(svc *service.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		books, err := svc.GetBooks(ctx)
-		if err != nil {
-			respondWithError(w, "Failed to get books", err, http.StatusInternalServerError)
-			return
-		}
-
-		for _, book := range books {
-			fmt.Fprintf(w, "%s\n", book)
-		}
-	}
 }
 
 func getBooksByLetterHandler(svc *service.Service) http.Handler {
