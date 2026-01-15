@@ -94,6 +94,39 @@ func (s *Service) GetBooksByAuthorID(ctx context.Context, id int64) ([]book.Book
 	return books, nil
 }
 
+// GetRecentBooks retrieves recently added books with pagination
+func (s *Service) GetRecentBooks(ctx context.Context, limit, offset int) ([]book.Book, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	books, total, err := s.repo.GetRecentBooks(limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get recent books: %w", err)
+	}
+	return books, total, nil
+}
+
+// GetBooksByGenre retrieves books by genre with pagination
+func (s *Service) GetBooksByGenre(ctx context.Context, genre string, limit, offset int) ([]book.Book, int, error) {
+	if genre == "" {
+		return nil, 0, fmt.Errorf("genre parameter cannot be empty")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	books, total, err := s.repo.GetBooksByGenre(genre, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get books by genre %q: %w", genre, err)
+	}
+	return books, total, nil
+}
+
 // Genres
 
 // GetGenres retrieves all genres from the repository
@@ -133,22 +166,22 @@ func (s *Service) GetBookByID(ctx context.Context, id int64) (*book.Book, error)
 }
 
 // DownloadBookFB2 returns an FB2 file stream for download
-func (s *Service) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *Service) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	return s.downloadService.DownloadBookFB2(ctx, id)
 }
 
 // DownloadBookFB2Zip returns an FB2 file packed in ZIP archive
-func (s *Service) DownloadBookFB2Zip(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *Service) DownloadBookFB2Zip(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	return s.downloadService.DownloadBookFB2Zip(ctx, id)
 }
 
 // DownloadBookEPUB returns an EPUB file stream for download
-func (s *Service) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *Service) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	return s.downloadService.DownloadBookEPUB(ctx, id)
 }
 
 // DownloadBookMOBI returns a MOBI file stream for download
-func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	return s.downloadService.DownloadBookMOBI(ctx, id)
 }
 

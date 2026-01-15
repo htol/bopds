@@ -133,6 +133,20 @@ func (m *mockRepository) GetBookByID(id int64) (*book.Book, error) {
 	return nil, &testError{msg: "book not found"}
 }
 
+func (m *mockRepository) GetRecentBooks(limit, offset int) ([]book.Book, int, error) {
+	if m.booksError != nil {
+		return nil, 0, m.booksError
+	}
+	return []book.Book{}, 0, nil
+}
+
+func (m *mockRepository) GetBooksByGenre(genre string, limit, offset int) ([]book.Book, int, error) {
+	if m.booksError != nil {
+		return nil, 0, m.booksError
+	}
+	return []book.Book{}, 0, nil
+}
+
 func (m *mockRepository) GetGenres() ([]string, error) {
 	if m.genresError != nil {
 		return nil, m.genresError

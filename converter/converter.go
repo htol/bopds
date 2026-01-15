@@ -25,19 +25,19 @@ func New() *Converter {
 }
 
 // ExtractFromZIP extracts an FB2 file from a ZIP archive
-func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser, error) {
+func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser, int64, error) {
 	if err := validateFilename(filename); err != nil {
-		return nil, fmt.Errorf("invalid filename: %w", err)
+		return nil, 0, fmt.Errorf("invalid filename: %w", err)
 	}
 
 	if strings.Contains(archivePath, "..") {
-		return nil, fmt.Errorf("invalid archive path: contains directory traversal")
+		return nil, 0, fmt.Errorf("invalid archive path: contains directory traversal")
 	}
 
 	// The database stores relative paths like "lib/fb2-xxx.zip" from the working directory
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
-		return nil, fmt.Errorf("open zip archive: %w", err)
+		return nil, 0, fmt.Errorf("open zip archive: %w", err)
 	}
 
 	for _, f := range r.File {
@@ -45,7 +45,7 @@ func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser,
 			file, err := f.Open()
 			if err != nil {
 				r.Close()
-				return nil, fmt.Errorf("open file in archive: %w", err)
+				return nil, 0, fmt.Errorf("open file in archive: %w", err)
 			}
 
 			return &readCloser{
@@ -53,24 +53,24 @@ func (c *Converter) ExtractFromZIP(archivePath, filename string) (io.ReadCloser,
 				onClose: func() {
 					r.Close()
 				},
-			}, nil
+			}, int64(f.UncompressedSize64), nil
 		}
 	}
 
 	r.Close()
-	return nil, fmt.Errorf("file %s not found in archive", filename)
+	return nil, 0, fmt.Errorf("file %s not found in archive", filename)
 }
 
 // ExtractFrom7Z extracts an FB2 file from a 7z archive
-func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, error) {
+func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, int64, error) {
 	if err := validateFilename(filename); err != nil {
-		return nil, fmt.Errorf("invalid filename: %w", err)
+		return nil, 0, fmt.Errorf("invalid filename: %w", err)
 	}
 
 	// Try native Go extraction first (supports LZMA, LZMA2, Deflate, etc.)
-	rc, err := c.extractFrom7zNative(archivePath, filename)
+	rc, size, err := c.extractFrom7zNative(archivePath, filename)
 	if err == nil {
-		return rc, nil
+		return rc, size, nil
 	}
 
 	// Fallback for algorithms unsupported by pure Go lib (e.g. PPMd, BCJ)
@@ -78,17 +78,17 @@ func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, 
 		return c.extractWith7zCLI(archivePath, filename)
 	}
 
-	return nil, err
+	return nil, 0, err
 }
 
-func (c *Converter) extractFrom7zNative(archivePath, filename string) (io.ReadCloser, error) {
+func (c *Converter) extractFrom7zNative(archivePath, filename string) (io.ReadCloser, int64, error) {
 	if strings.Contains(archivePath, "..") {
-		return nil, fmt.Errorf("invalid archive path: contains directory traversal")
+		return nil, 0, fmt.Errorf("invalid archive path: contains directory traversal")
 	}
 
 	r, err := sevenzip.OpenReader(archivePath)
 	if err != nil {
-		return nil, fmt.Errorf("open 7z archive: %w", err)
+		return nil, 0, fmt.Errorf("open 7z archive: %w", err)
 	}
 
 	for _, f := range r.File {
@@ -96,7 +96,7 @@ func (c *Converter) extractFrom7zNative(archivePath, filename string) (io.ReadCl
 			file, err := f.Open()
 			if err != nil {
 				r.Close()
-				return nil, fmt.Errorf("open file in archive: %w", err)
+				return nil, 0, fmt.Errorf("open file in archive: %w", err)
 			}
 
 			return &readCloser{
@@ -104,30 +104,30 @@ func (c *Converter) extractFrom7zNative(archivePath, filename string) (io.ReadCl
 				onClose: func() {
 					r.Close()
 				},
-			}, nil
+			}, int64(f.UncompressedSize), nil
 		}
 	}
 
 	r.Close()
-	return nil, fmt.Errorf("file %s not found in archive", filename)
+	return nil, 0, fmt.Errorf("file %s not found in archive", filename)
 }
 
-func (c *Converter) extractWith7zCLI(archivePath, filename string) (io.ReadCloser, error) {
+func (c *Converter) extractWith7zCLI(archivePath, filename string) (io.ReadCloser, int64, error) {
 	// Use system 7z binary to extract to stdout
 	cmd := exec.Command("7z", "e", "-so", archivePath, filename)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("7z cli pipe: %w", err)
+		return nil, -1, fmt.Errorf("7z cli pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("7z cli start: %w", err)
+		return nil, -1, fmt.Errorf("7z cli start: %w", err)
 	}
 
 	return &cmdReadCloser{
 		ReadCloser: stdout,
 		cmd:        cmd,
-	}, nil
+	}, -1, nil // Size unknown for stream extraction
 }
 
 type cmdReadCloser struct {
@@ -145,7 +145,7 @@ func (c *cmdReadCloser) Close() error {
 
 // ExtractFromArchive extracts an FB2 file from a ZIP or 7z archive
 // It auto-detects the archive type based on file extension
-func (c *Converter) ExtractFromArchive(archivePath, filename string) (io.ReadCloser, error) {
+func (c *Converter) ExtractFromArchive(archivePath, filename string) (io.ReadCloser, int64, error) {
 	ext := strings.ToLower(filepath.Ext(archivePath))
 
 	switch ext {
@@ -154,7 +154,7 @@ func (c *Converter) ExtractFromArchive(archivePath, filename string) (io.ReadClo
 	case ".7z":
 		return c.ExtractFrom7Z(archivePath, filename)
 	default:
-		return nil, fmt.Errorf("unsupported archive format: %s", ext)
+		return nil, 0, fmt.Errorf("unsupported archive format: %s", ext)
 	}
 }
 

@@ -269,6 +269,19 @@ func (app *appEnv) serve() {
 
 func router(svc *service.Service) http.Handler {
 	mux := http.NewServeMux()
+
+	// OPDS Catalog routes
+	mux.Handle("GET /opds", opdsRootHandler(svc))
+	mux.Handle("GET /opds/", opdsRootHandler(svc))
+	mux.Handle("GET /opds/opensearch.xml", opdsOpenSearchHandler(svc))
+	mux.Handle("GET /opds/search", opdsSearchHandler(svc))
+	mux.Handle("GET /opds/new", opdsNewBooksHandler(svc))
+	mux.Handle("GET /opds/authors", opdsAuthorsHandler(svc))
+	mux.Handle("GET /opds/authors/{id}", opdsAuthorBooksHandler(svc))
+	mux.Handle("GET /opds/genres", opdsGenresHandler(svc))
+	mux.Handle("GET /opds/genres/{name}", opdsGenreBooksHandler(svc))
+
+	// Frontend and JSON API routes
 	mux.Handle("/", indexHandler())
 	mux.HandleFunc("/a", getAuthorsHandler(svc))
 	mux.HandleFunc("/b", getBooksHandler(svc))
@@ -555,16 +568,17 @@ func downloadBookHandler(svc *service.Service) http.Handler {
 
 		var reader io.ReadCloser
 		var filename string
+		var size int64
 
 		switch format {
 		case "fb2":
-			reader, filename, err = svc.DownloadBookFB2(ctx, id)
+			reader, filename, size, err = svc.DownloadBookFB2(ctx, id)
 		case "fb2.zip":
-			reader, filename, err = svc.DownloadBookFB2Zip(ctx, id)
+			reader, filename, size, err = svc.DownloadBookFB2Zip(ctx, id)
 		case "epub":
-			reader, filename, err = svc.DownloadBookEPUB(ctx, id)
+			reader, filename, size, err = svc.DownloadBookEPUB(ctx, id)
 		case "mobi":
-			reader, filename, err = svc.DownloadBookMOBI(ctx, id)
+			reader, filename, size, err = svc.DownloadBookMOBI(ctx, id)
 		}
 
 		if err != nil {
@@ -576,6 +590,10 @@ func downloadBookHandler(svc *service.Service) http.Handler {
 			return
 		}
 		defer reader.Close()
+
+		if size > 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		}
 
 		// Set headers for file download
 		switch format {
@@ -590,7 +608,6 @@ func downloadBookHandler(svc *service.Service) http.Handler {
 		}
 
 		// Set filename with proper UTF-8 encoding (RFC 5987)
-		// Use percent-encoding for UTF-8 filename
 		encodedFilename := url.PathEscape(filename)
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", encodedFilename))
 

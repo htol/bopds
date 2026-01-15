@@ -2,9 +2,11 @@ lib/*
 tmp/*
 bopds
 *.db
-books.db-shm
-books.db-wal
+*.db-shm
+*.db-wal
 go.sum
 *.fb2
+*.mobi
+*.epub
 *.zip
 *.prof

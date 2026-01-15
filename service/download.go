@@ -41,50 +41,50 @@ func (s *DownloadService) GetBookByID(ctx context.Context, id int64) (*book.Book
 }
 
 // DownloadBookFB2 returns an unpacked FB2 file stream
-func (s *DownloadService) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *DownloadService) DownloadBookFB2(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	// Get book info
 	b, err := s.GetBookByID(ctx, id)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 
 	// Extract FB2 from archive (ZIP or 7z)
-	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
+	reader, size, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
-		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
+		return nil, "", 0, fmt.Errorf("extract FB2 from archive: %w", err)
 	}
 
 	// Generate filename as "Author - Title.fb2"
 	filename := converter.FormatBookFilename(b, "fb2")
 
-	return reader, filename, nil
+	return reader, filename, size, nil
 }
 
 // DownloadBookFB2Zip returns an FB2 file packed in ZIP archive
-func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	// Get book info
 	b, err := s.GetBookByID(ctx, id)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 
 	// Extract FB2 from archive (ZIP or 7z)
-	fb2Reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
+	fb2Reader, _, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
-		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
+		return nil, "", 0, fmt.Errorf("extract FB2 from archive: %w", err)
 	}
 	defer fb2Reader.Close()
 
 	// Read FB2 content
 	fb2Data, err := io.ReadAll(fb2Reader)
 	if err != nil {
-		return nil, "", fmt.Errorf("read FB2 content: %w", err)
+		return nil, "", 0, fmt.Errorf("read FB2 content: %w", err)
 	}
 
 	// Create a temporary file for the ZIP archive
 	tempFile, err := os.CreateTemp("", "fb2-*.zip")
 	if err != nil {
-		return nil, "", fmt.Errorf("create temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("create temp file: %w", err)
 	}
 	tempPath := tempFile.Name()
 
@@ -104,7 +104,7 @@ func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.
 		zipWriter.Close()
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("create ZIP entry: %w", err)
+		return nil, "", 0, fmt.Errorf("create ZIP entry: %w", err)
 	}
 
 	// Write FB2 content to ZIP
@@ -112,21 +112,29 @@ func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.
 		zipWriter.Close()
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("write FB2 to ZIP: %w", err)
+		return nil, "", 0, fmt.Errorf("write FB2 to ZIP: %w", err)
 	}
 
 	// Close ZIP writer
 	if err := zipWriter.Close(); err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("close ZIP writer: %w", err)
+		return nil, "", 0, fmt.Errorf("close ZIP writer: %w", err)
 	}
 
 	// Reopen temp file for reading
 	if _, err := tempFile.Seek(0, 0); err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("seek temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("seek temp file: %w", err)
+	}
+
+	// Get file info for size
+	fi, err := tempFile.Stat()
+	if err != nil {
+		tempFile.Close()
+		os.Remove(tempPath)
+		return nil, "", 0, fmt.Errorf("stat temp file: %w", err)
 	}
 
 	// Return with .fb2.zip extension
@@ -138,30 +146,30 @@ func (s *DownloadService) DownloadBookFB2Zip(ctx context.Context, id int64) (io.
 		cleanup: func() {
 			os.Remove(tempPath)
 		},
-	}, filename, nil
+	}, filename, fi.Size(), nil
 }
 
 // DownloadBookEPUB returns an EPUB file stream (converts on-the-fly)
-func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	// Get book info
 	b, err := s.GetBookByID(ctx, id)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 
 	// Extract FB2 to temporary file
 	tempFile, err := os.CreateTemp("", "fb2-*.fb2")
 	if err != nil {
-		return nil, "", fmt.Errorf("create temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("create temp file: %w", err)
 	}
 	tempPath := tempFile.Name()
 
 	// Extract from archive and write to temp file
-	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
+	reader, _, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
+		return nil, "", 0, fmt.Errorf("extract FB2 from archive: %w", err)
 	}
 
 	// Copy FB2 content to temp file
@@ -169,7 +177,7 @@ func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.Re
 		reader.Close()
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("write FB2 to temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("write FB2 to temp file: %w", err)
 	}
 	reader.Close()
 	tempFile.Close()
@@ -178,7 +186,7 @@ func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.Re
 	epubReader, _, err := s.converter.ConvertFB2ToEPUB(ctx, tempPath)
 	if err != nil {
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("convert FB2 to EPUB: %w", err)
+		return nil, "", 0, fmt.Errorf("convert FB2 to EPUB: %w", err)
 	}
 
 	// Clean up temp FB2 file
@@ -187,30 +195,40 @@ func (s *DownloadService) DownloadBookEPUB(ctx context.Context, id int64) (io.Re
 	// Generate filename as "Author - Title.epub"
 	filename := converter.FormatBookFilename(b, "epub")
 
-	return epubReader, filename, nil
+	// We need size, so we might need to stat the file if ConvertFB2ToEPUB returned a file reader
+	var size int64 = -1
+	if f, ok := epubReader.(*cleanupReadCloser); ok {
+		if file, ok := f.ReadCloser.(*os.File); ok {
+			if fi, err := file.Stat(); err == nil {
+				size = fi.Size()
+			}
+		}
+	}
+
+	return epubReader, filename, size, nil
 }
 
 // DownloadBookMOBI returns a MOBI file stream (converts on-the-fly)
-func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser, string, int64, error) {
 	// Get book info
 	b, err := s.GetBookByID(ctx, id)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 
 	// Extract FB2 to temporary file
 	tempFile, err := os.CreateTemp("", "fb2-*.fb2")
 	if err != nil {
-		return nil, "", fmt.Errorf("create temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("create temp file: %w", err)
 	}
 	tempPath := tempFile.Name()
 
 	// Extract from archive and write to temp file
-	reader, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
+	reader, _, err := s.converter.ExtractFromArchive(b.Archive, b.FileName)
 	if err != nil {
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("extract FB2 from archive: %w", err)
+		return nil, "", 0, fmt.Errorf("extract FB2 from archive: %w", err)
 	}
 
 	// Copy FB2 content to temp file
@@ -218,7 +236,7 @@ func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.Re
 		reader.Close()
 		tempFile.Close()
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("write FB2 to temp file: %w", err)
+		return nil, "", 0, fmt.Errorf("write FB2 to temp file: %w", err)
 	}
 	reader.Close()
 	tempFile.Close()
@@ -227,7 +245,7 @@ func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.Re
 	mobiReader, _, err := s.converter.ConvertFB2ToMOBI(ctx, tempPath)
 	if err != nil {
 		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("convert FB2 to MOBI: %w", err)
+		return nil, "", 0, fmt.Errorf("convert FB2 to MOBI: %w", err)
 	}
 
 	// Clean up temp FB2 file
@@ -236,7 +254,17 @@ func (s *DownloadService) DownloadBookMOBI(ctx context.Context, id int64) (io.Re
 	// Generate filename as "Author - Title.mobi"
 	filename := converter.FormatBookFilename(b, "mobi")
 
-	return mobiReader, filename, nil
+	// Get size
+	var size int64 = -1
+	if f, ok := mobiReader.(*cleanupReadCloser); ok {
+		if file, ok := f.ReadCloser.(*os.File); ok {
+			if fi, err := file.Stat(); err == nil {
+				size = fi.Size()
+			}
+		}
+	}
+
+	return mobiReader, filename, size, nil
 }
 
 // cleanupReadCloser wraps a ReadCloser and calls cleanup on close

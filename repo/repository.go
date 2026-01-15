@@ -30,6 +30,8 @@ type Repository interface {
 	GetBooksByLetter(letters string) ([]book.Book, error)
 	GetBooksByAuthorID(id int64) ([]book.Book, error)
 	GetBookByID(id int64) (*book.Book, error)
+	GetRecentBooks(limit, offset int) ([]book.Book, int, error)
+	GetBooksByGenre(genre string, limit, offset int) ([]book.Book, int, error)
 
 	// SearchBooks performs full-text search across books by title and author
 	// Returns results ranked by relevance (FTS5 rank)
