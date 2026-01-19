@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"os/exec"
 
 	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/logger"
 	"github.com/htol/fb2c"
 )
 
@@ -67,15 +69,23 @@ func (c *Converter) ExtractFrom7Z(archivePath, filename string) (io.ReadCloser, 
 		return nil, 0, fmt.Errorf("invalid filename: %w", err)
 	}
 
+	start := time.Now()
+
 	// Try native Go extraction first (supports LZMA, LZMA2, Deflate, etc.)
 	rc, size, err := c.extractFrom7zNative(archivePath, filename)
 	if err == nil {
+		logger.Info("7z extraction completed (native)", "archive", archivePath, "file", filename, "duration", time.Since(start).Milliseconds())
 		return rc, size, nil
 	}
 
 	// Fallback for algorithms unsupported by pure Go lib (e.g. PPMd, BCJ)
 	if strings.Contains(err.Error(), "unsupported compression algorithm") {
-		return c.extractWith7zCLI(archivePath, filename)
+		startCLI := time.Now()
+		rc, size, err := c.extractWith7zCLI(archivePath, filename)
+		if err == nil {
+			logger.Info("7z extraction completed (CLI fallback)", "archive", archivePath, "file", filename, "duration", time.Since(startCLI).Milliseconds())
+			return rc, size, nil
+		}
 	}
 
 	return nil, 0, err
@@ -175,6 +185,7 @@ func (c *Converter) ConvertFB2(ctx context.Context, fb2Path string, format strin
 
 	outputPath := filepath.Join(tempDir, "converted."+format)
 
+	start := time.Now()
 	fb2Converter := fb2c.NewConverter()
 	fb2Converter.SetOptions(fb2c.DefaultConvertOptions())
 
@@ -182,6 +193,9 @@ func (c *Converter) ConvertFB2(ctx context.Context, fb2Path string, format strin
 		os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("convert FB2 to %s: %w", format, err)
 	}
+
+	convertDuration := time.Since(start).Milliseconds()
+	logger.Info("FB2 conversion completed", "format", format, "path", fb2Path, "duration", convertDuration)
 
 	convertedFile, err := os.Open(outputPath)
 	if err != nil {
