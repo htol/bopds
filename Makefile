@@ -34,3 +34,7 @@ serve: build
 env:
 	go install github.com/air-verse/air@latest
 	go install golang.org/x/tools/gopls@latest
+
+update-deps:
+	GOPROXY=direct go get github.com/htol/fb2c@main
+	go mod tidy
