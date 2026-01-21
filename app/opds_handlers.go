@@ -137,7 +137,7 @@ func opdsSearchHandler(svc *service.Service) http.Handler {
 		}
 
 		offset := (page - 1) * pageSize
-		results, err := svc.SearchBooks(ctx, query, pageSize, offset)
+		results, err := svc.SearchBooks(ctx, query, pageSize, offset, nil)
 		if err != nil {
 			logger.Error("OPDS search failed", "query", query, "error", err)
 			http.Error(w, "Search failed", http.StatusInternalServerError)
@@ -360,9 +360,9 @@ func opdsGenresHandler(svc *service.Service) http.Handler {
 
 		for _, genre := range genres {
 			feed.AddAcquisitionNavigationEntry(
-				fmt.Sprintf("urn:uuid:bopds-genre-%s", genre),
-				genre,
-				fmt.Sprintf("%s/opds/genres/%s", baseURL, genre),
+				fmt.Sprintf("urn:uuid:bopds-genre-%s", genre.Name),
+				genre.DisplayName,
+				fmt.Sprintf("%s/opds/genres/%s", baseURL, genre.Name),
 				opds.RelSubsection,
 				"",
 			)

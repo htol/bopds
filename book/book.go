@@ -54,8 +54,9 @@ type SeriesInfo struct {
 
 // Genre represents a genre (for queries)
 type Genre struct {
-	ID   int64  `json:"genre_id"`
-	Name string `json:"name"`
+	ID          int64  `json:"genre_id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 // Keyword represents a keyword (for queries)

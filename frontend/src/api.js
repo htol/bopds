@@ -49,7 +49,11 @@ export const api = {
   getBooks: (letter) => fetchAPI(`/api/books?startsWith=${letter}`),
   getBooksByAuthor: (authorId) => fetchAPI(`/api/authors/${authorId}/books`),
   getAuthorById: (authorId) => fetchAPI(`/api/authors/${authorId}`),
-  searchBooks: (query, limit = 20, offset = 0) => {
-    return fetchAPI(`/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`)
+  searchBooks: (query, limit = 20, offset = 0, fields = []) => {
+    let url = `/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`
+    if (fields && fields.length > 0) {
+      url += `&fields=${fields.join(',')}`
+    }
+    return fetchAPI(url)
   }
 }

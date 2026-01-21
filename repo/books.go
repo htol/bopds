@@ -151,7 +151,8 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 		panic(err)
 	}
 
-	r.syncGenreDisplayNames()
+	r.migrateAddTranslitName()
+	r.SyncGenreDisplayNames()
 
 	return r
 }
@@ -1438,13 +1439,14 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	return books, nil
 }
 
-func (r *Repo) GetGenres() ([]string, error) {
+func (r *Repo) GetGenres() ([]book.Genre, error) {
 	QUERY := `
-		SELECT DISTINCT g.display_name
+		SELECT g.genre_id, g.name, g.display_name
 		FROM genres g
 		JOIN book_genres bg ON g.genre_id = bg.genre_id
 		JOIN books b ON bg.book_id = b.book_id
-		WHERE b.deleted = 0 AND g.display_name IS NOT NULL
+		WHERE b.deleted = 0
+		GROUP BY g.genre_id
 		ORDER BY g.display_name
 	`
 
@@ -1454,13 +1456,19 @@ func (r *Repo) GetGenres() ([]string, error) {
 	}
 	defer rows.Close()
 
-	genres := make([]string, 0)
+	genres := make([]book.Genre, 0)
 	for rows.Next() {
-		var genre string
-		if err := rows.Scan(&genre); err != nil {
+		var g book.Genre
+		var displayName sql.NullString
+		if err := rows.Scan(&g.ID, &g.Name, &displayName); err != nil {
 			return nil, fmt.Errorf("scan genre: %w", err)
 		}
-		genres = append(genres, genre)
+		if displayName.Valid {
+			g.DisplayName = displayName.String
+		} else {
+			g.DisplayName = g.Name // Fallback
+		}
+		genres = append(genres, g)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate genres: %w", err)
@@ -1917,7 +1925,7 @@ func (r *Repo) GetKeywords() ([]book.Keyword, error) {
 // SearchBooks performs full-text search across book titles and authors
 // Uses FTS5 for fast, ranked search results
 // Optimized with single query including author JOIN (fixes N+1 query issue)
-func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
 	// Validate query
 	if query == "" {
 		return []book.BookSearchResult{}, nil
@@ -1929,7 +1937,22 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int)
 	}
 
 	// Escape FTS5 special characters to prevent injection
-	ftsQuery := escapeFTS5Query(cleanQuery) + "*"
+	escapedQuery := escapeFTS5Query(cleanQuery)
+	var ftsQuery string
+
+	// If specific fields are requested, restrict the search
+	if len(fields) > 0 {
+		var parts []string
+		for _, f := range fields {
+			parts = append(parts, fmt.Sprintf("%s:%s*", f, escapedQuery))
+		}
+		// Combine with OR: (title:foo* OR author:foo*)
+		// We use standard FTS5 syntax
+		ftsQuery = fmt.Sprintf("(%s)", strings.Join(parts, " OR "))
+	} else {
+		// Default search across all columns
+		ftsQuery = escapedQuery + "*"
+	}
 
 	// Search FTS5 table and join back to books table for full details
 	// Uses book_id column for direct, accurate mapping
@@ -2028,7 +2051,7 @@ func (r *Repo) RebuildFTSIndex() error {
 			 FROM book_series bs
 			 JOIN series s ON bs.series_id = s.series_id
 			 WHERE bs.book_id = b.book_id),
-			(SELECT group_concat(coalesce(g.display_name, g.name), ' | ')
+			(SELECT group_concat(g.name || ' ' || coalesce(g.display_name, '') || ' ' || coalesce(g.translit_name, ''), ' | ')
 			 FROM book_genres bg
 			 JOIN genres g ON bg.genre_id = g.genre_id
 			 WHERE bg.book_id = b.book_id),
@@ -2047,26 +2070,49 @@ func (r *Repo) RebuildFTSIndex() error {
 	return nil
 }
 
-func (r *Repo) syncGenreDisplayNames() {
-	rows, err := r.db.Query(`SELECT name, display_name FROM genres`)
+func (r *Repo) migrateAddTranslitName() {
+	_, err := r.db.Exec("ALTER TABLE genres ADD COLUMN translit_name TEXT")
+	if err != nil {
+		// Ignore error if column already exists
+		// SQLite doesn't have "ADD COLUMN IF NOT EXISTS"
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			logger.Warn("Failed to add translit_name column (might already exist)", "error", err)
+		}
+	}
+}
+
+func (r *Repo) SyncGenreDisplayNames() {
+	rows, err := r.db.Query(`SELECT name, display_name, translit_name FROM genres`)
 	if err != nil {
 		logger.Error("Failed to query genres for update", "error", err)
 		return
 	}
 
 	type genreUpdate struct {
-		name        string
-		displayName string
+		name         string
+		displayName  string
+		translitName string
 	}
 	var updates []genreUpdate
 
 	for rows.Next() {
 		var name string
 		var currentDN sql.NullString
-		if err := rows.Scan(&name, &currentDN); err == nil {
+		var currentTN sql.NullString
+		if err := rows.Scan(&name, &currentDN, &currentTN); err == nil {
 			displayName := MapGenre(name)
+			translitName := Translit(displayName)
+
+			needsUpdate := false
 			if displayName != name && (!currentDN.Valid || currentDN.String != displayName) {
-				updates = append(updates, genreUpdate{name, displayName})
+				needsUpdate = true
+			}
+			if !currentTN.Valid || currentTN.String != translitName {
+				needsUpdate = true
+			}
+
+			if needsUpdate {
+				updates = append(updates, genreUpdate{name, displayName, translitName})
 			}
 		}
 	}
@@ -2082,7 +2128,7 @@ func (r *Repo) syncGenreDisplayNames() {
 		return
 	}
 
-	stmt, err := tx.Prepare(`UPDATE genres SET display_name = ? WHERE name = ?`)
+	stmt, err := tx.Prepare(`UPDATE genres SET display_name = ?, translit_name = ? WHERE name = ?`)
 	if err != nil {
 		logger.Error("Failed to prepare statement for genre update", "error", err)
 		tx.Rollback()
@@ -2092,7 +2138,7 @@ func (r *Repo) syncGenreDisplayNames() {
 
 	count := 0
 	for _, u := range updates {
-		if _, err := stmt.Exec(u.displayName, u.name); err != nil {
+		if _, err := stmt.Exec(u.displayName, u.translitName, u.name); err != nil {
 			logger.Error("Failed to execute genre update", "error", err, "name", u.name)
 		} else {
 			count++
@@ -2102,6 +2148,6 @@ func (r *Repo) syncGenreDisplayNames() {
 	if err := tx.Commit(); err != nil {
 		logger.Error("Failed to commit genre updates", "error", err)
 	} else if count > 0 {
-		logger.Info("Updated genre display names", "new_count", count)
+		logger.Info("Updated genre display/translit names", "new_count", count)
 	}
 }

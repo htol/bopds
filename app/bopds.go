@@ -166,6 +166,9 @@ func (app *appEnv) run() error {
 			return fmt.Errorf("recreate indexes: %w", err)
 		}
 
+		// Update genre display names and transliteration
+		storage.SyncGenreDisplayNames()
+
 		// Rebuild FTS index to populate author, series, and genre fields
 		logger.Info("Rebuilding FTS index...")
 		if err := storage.RebuildFTSIndex(); err != nil {
@@ -421,8 +424,25 @@ func searchBooksHandler(svc *service.Service) http.Handler {
 			offset = o
 		}
 
+		// Parse fields
+		fieldsStr := r.URL.Query().Get("fields")
+		var fields []string
+		if fieldsStr != "" {
+			fields = strings.Split(fieldsStr, ",")
+			// Validate fields
+			for _, f := range fields {
+				switch f {
+				case "title", "author", "genre", "series":
+					// valid
+				default:
+					respondWithValidationError(w, fmt.Sprintf("invalid field '%s'", f))
+					return
+				}
+			}
+		}
+
 		// Perform search with context for cancellation
-		results, err := svc.SearchBooks(ctx, query, limit, offset)
+		results, err := svc.SearchBooks(ctx, query, limit, offset, fields)
 		if err != nil {
 			respondWithError(w, "Failed to search books", err, http.StatusInternalServerError)
 			return

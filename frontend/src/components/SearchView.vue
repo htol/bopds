@@ -1,12 +1,26 @@
 <template>
   <div class="p-6 max-w-5xl mx-auto">
     <!-- Search Input Section -->
-    <div class="mb-8">
+    <div class="mb-4">
       <SearchInput
         v-model="searchQuery"
         placeholder="Search books by title or author..."
         @update:modelValue="handleSearch"
       />
+    </div>
+
+    <!-- Filters Section -->
+    <div class="mb-8 flex flex-wrap gap-2 animate-fade-in-up">
+      <BaseButton
+         v-for="filter in availableFilters"
+         :key="filter.value"
+         @click="toggleFilter(filter.value)"
+         :variant="isFilterSelected(filter.value) ? 'primary' : 'outline'"
+         size="sm"
+         class="rounded-full transition-all duration-200"
+      >
+        {{ filter.label }}
+      </BaseButton>
     </div>
 
     <!-- Error State -->
@@ -74,6 +88,7 @@ import SearchInput from '@/components/SearchInput.vue'
 import UniversalBookCard from '@/components/domain/UniversalBookCard.vue'
 import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
+import BaseButton from '@/components/base/BaseButton.vue' // Import BaseButton
 import { api, downloadBook } from '@/api'
 
 const props = defineProps({
@@ -92,6 +107,17 @@ const hasSearched = ref(false)
 const hasNoMoreResults = ref(false)
 const error = ref(null)
 
+// Filters
+const availableFilters = [
+  { label: 'Название', value: 'title' },
+  { label: 'Автор', value: 'author' },
+  { label: 'Жанры', value: 'genre' }
+]
+const selectedFilters = ref([]) // Array of selected filter values
+
+const isFilterSelected = (value) => selectedFilters.value.includes(value)
+
+
 // Pagination
 const page = ref(1)
 const pageSize = 20
@@ -100,8 +126,8 @@ const sentinel = ref(null)
 // Provide search query for child components
 provide('searchQuery', searchQuery)
 
-// Debounced search function (300ms delay)
-const debouncedSearch = useDebounceFn(async (query) => {
+// Core search logic
+const executeSearch = async (query) => {
   // Clear previous error
   error.value = null
 
@@ -119,9 +145,14 @@ const debouncedSearch = useDebounceFn(async (query) => {
   hasNoMoreResults.value = false
 
   try {
-    const newResults = await api.searchBooks(query, pageSize, 0)
+    // Pass selected filters as fields to API
+    const fields = selectedFilters.value.length > 0 ? selectedFilters.value : []
+    const newResults = await api.searchBooks(query, pageSize, 0, fields)
     results.value = newResults
     hasNoMoreResults.value = newResults.length < pageSize
+    
+    // Debug info
+    console.log('Search with filters:', fields, 'Results:', newResults.length)
   } catch (err) {
     console.error('Search error:', err)
     error.value = err.message || 'Failed to search books'
@@ -129,11 +160,26 @@ const debouncedSearch = useDebounceFn(async (query) => {
   } finally {
     isLoading.value = false
   }
+}
+
+// Debounced search for typing
+const debouncedSearch = useDebounceFn((query) => {
+  executeSearch(query)
 }, 300)
 
 // Handle search input
 const handleSearch = (query) => {
   debouncedSearch(query)
+}
+
+const toggleFilter = (value) => {
+  if (selectedFilters.value.includes(value)) {
+    selectedFilters.value = selectedFilters.value.filter(f => f !== value)
+  } else {
+    selectedFilters.value.push(value)
+  }
+  // Trigger search immediately when filters change
+  executeSearch(searchQuery.value)
 }
 
 // Load more results (infinite scroll)
@@ -148,7 +194,8 @@ const loadMore = async () => {
 
   try {
     const offset = page.value * pageSize
-    const newResults = await api.searchBooks(searchQuery.value, pageSize, offset)
+    const fields = selectedFilters.value.length > 0 ? selectedFilters.value : []
+    const newResults = await api.searchBooks(searchQuery.value, pageSize, offset, fields)
 
     if (newResults.length === 0) {
       hasNoMoreResults.value = true

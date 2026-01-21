@@ -130,7 +130,7 @@ func (s *Service) GetBooksByGenre(ctx context.Context, genre string, limit, offs
 // Genres
 
 // GetGenres retrieves all genres from the repository
-func (s *Service) GetGenres(ctx context.Context) ([]string, error) {
+func (s *Service) GetGenres(ctx context.Context) ([]book.Genre, error) {
 	genres, err := s.repo.GetGenres()
 	if err != nil {
 		return nil, fmt.Errorf("get genres: %w", err)
@@ -186,12 +186,12 @@ func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser
 }
 
 // SearchBooks performs full-text search across books by title and/or author
-func (s *Service) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+func (s *Service) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
 	if query == "" {
 		return []book.BookSearchResult{}, nil
 	}
 
-	books, err := s.repo.SearchBooks(ctx, query, limit, offset)
+	books, err := s.repo.SearchBooks(ctx, query, limit, offset, fields)
 	if err != nil {
 		return nil, fmt.Errorf("search books: %w", err)
 	}

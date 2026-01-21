@@ -19,7 +19,7 @@ type mockRepository struct {
 	authorsError error
 	books        []string
 	booksError   error
-	genres       []string
+	genres       []book.Genre
 	genresError  error
 	pingError    error
 }
@@ -147,7 +147,7 @@ func (m *mockRepository) GetBooksByGenre(genre string, limit, offset int) ([]boo
 	return []book.Book{}, 0, nil
 }
 
-func (m *mockRepository) GetGenres() ([]string, error) {
+func (m *mockRepository) GetGenres() ([]book.Genre, error) {
 	if m.genresError != nil {
 		return nil, m.genresError
 	}
@@ -166,7 +166,7 @@ func (m *mockRepository) List() error {
 	return nil
 }
 
-func (m *mockRepository) SearchBooks(ctx context.Context, query string, limit, offset int) ([]book.BookSearchResult, error) {
+func (m *mockRepository) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
 	return []book.BookSearchResult{}, nil
 }
 
@@ -285,21 +285,25 @@ func TestService_GetAuthorsByLetter_EmptyString(t *testing.T) {
 func TestService_GetGenres(t *testing.T) {
 	tests := []struct {
 		name        string
-		genres      []string
+		genres      []book.Genre
 		genresErr   error
 		expectError bool
 		expectCount int
 	}{
 		{
-			name:        "success with genres",
-			genres:      []string{"Fiction", "Science", "History"},
+			name: "success with genres",
+			genres: []book.Genre{
+				{Name: "Fiction", DisplayName: "Fiction"},
+				{Name: "Science", DisplayName: "Science"},
+				{Name: "History", DisplayName: "History"},
+			},
 			genresErr:   nil,
 			expectError: false,
 			expectCount: 3,
 		},
 		{
 			name:        "empty list",
-			genres:      []string{},
+			genres:      []book.Genre{},
 			genresErr:   nil,
 			expectError: false,
 			expectCount: 0,

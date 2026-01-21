@@ -21,13 +21,13 @@
     <div v-else class="space-y-3">
       <div
         v-for="(genre, index) in genres"
-        :key="genre"
-        @click="$emit('select-genre', genre)"
+        :key="genre.name"
+        @click="$emit('select-genre', genre.name)"
         class="group border border-gray-200 bg-white rounded-lg p-4 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer animate-snap-in"
         :style="{ animationDelay: `${index * 30}ms` }"
       >
         <p class="text-lg font-display font-semibold text-gray-900 group-hover:text-accent-primary transition-colors duration-200">
-          {{ genre }}
+          {{ genre.display_name || genre.name }}
         </p>
       </div>
 
