@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
+    p7zip-full \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js
@@ -37,13 +38,9 @@ WORKDIR /app
 # ===========================================
 FROM base AS frontend-builder
 
-# Copy frontend package files
-COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm ci
-
 # Copy frontend source and build
 COPY frontend/ ./frontend/
-RUN cd frontend && npm run build
+RUN cd frontend && npm ci && npm run build
 
 # ===========================================
 # STAGE 3: Backend Build
@@ -61,7 +58,7 @@ COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Build the Go application with CGO enabled for SQLite support
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o bopds .
+RUN make backend
 
 # ===========================================
 # STAGE 4: Development Image
@@ -69,7 +66,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o bopds .
 FROM base AS development
 
 # Install Air for hot reload (use version compatible with Go 1.23)
-RUN go install github.com/cosmtrek/air@v1.49.0
+RUN make env
 
 # Set working directory
 WORKDIR /app
@@ -106,7 +103,7 @@ FROM debian:bookworm-slim AS production
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libsqlite3-0 \
-    curl \
+    p7zip-full \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -136,10 +133,6 @@ ENV PORT=3001
 ENV DB_PATH=/data/books.db
 ENV LIBRARY_PATH=/library
 ENV LOG_LEVEL=info
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3001/ || exit 1
 
 # Run the application
 CMD ["/app/bopds", "serve"]

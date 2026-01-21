@@ -13,6 +13,12 @@ frontend:
 backend:
 	CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
 
+docker-prod:
+	docker build -t bopds:production .
+
+docker-dev:
+	docker build -t bopds:development .
+
 dev:
 	tmux new-session -d -s bopds-dev 'cd frontend && npm run dev'
 	tmux split-window -v -t bopds-dev 'air'

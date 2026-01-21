@@ -10,47 +10,55 @@
 ### Production Deployment
 
 1. **Prepare Environment**
+
    ```bash
    cp .env.example .env
    # Edit .env with your configuration
    ```
 
 2. **Build the Image**
+
    ```bash
    docker build -t bopds:production .
    ```
 
 3. **Start the Service**
+
    ```bash
    docker-compose up -d
    ```
 
 4. **Initialize Database** (First time only)
+
    ```bash
    docker-compose exec bopds /app/bopds init
    ```
 
 5. **Scan Library** (After adding books to `./lib`)
+
    ```bash
    docker-compose exec bopds /app/bopds scan
    ```
 
 6. **Access the Application**
-   - Open http://localhost:3001 in your browser
+   - Open <http://docker-host:3001> in your browser
 
 ### Development Environment
 
 1. **Start Development Container**
+
    ```bash
    docker-compose -f docker-compose.dev.yml up --build
    ```
 
 2. **View Logs**
+
    ```bash
    docker-compose -f docker-compose.dev.yml logs -f
    ```
 
 3. **Attach to Container** (For debugging)
+
    ```bash
    docker attach bopds-dev-server
    # Press Ctrl+P then Ctrl+Q to detach without stopping
@@ -59,6 +67,7 @@
 4. **Hot Reload**
    - Go changes: Automatically reloaded by Air
    - Vue changes: Rebuild inside container:
+
      ```bash
      docker-compose -f docker-compose.dev.yml exec bopds-dev bash -c "cd frontend && npm run build"
      ```
@@ -66,6 +75,7 @@
 ## Volume Management
 
 ### Backup Database
+
 ```bash
 docker run --rm \
   -v bopds_db-data:/data \
@@ -75,6 +85,7 @@ docker run --rm \
 ```
 
 ### Restore Database
+
 ```bash
 docker run --rm \
   -v bopds_db-data:/data \
@@ -84,6 +95,7 @@ docker run --rm \
 ```
 
 ### Inspect Database Location
+
 ```bash
 docker volume inspect bopds_db-data
 ```
@@ -108,6 +120,7 @@ docker volume inspect bopds_db-data
 ## Troubleshooting
 
 ### Container Won't Start
+
 ```bash
 # Check logs
 docker-compose logs bopds
@@ -117,6 +130,7 @@ docker-compose config
 ```
 
 ### Database Locked
+
 ```bash
 # Stop container
 docker-compose down
@@ -129,19 +143,23 @@ docker-compose up -d
 ```
 
 ### CGO Errors
+
 The Dockerfile uses Debian (not Alpine) for proper glibc support with CGO/SQLite
 
 ### Large Library Performance
+
 For libraries with thousands of books, increase resource limits in docker-compose.yml
 
 ## Updating
 
 1. **Rebuild Image**
+
    ```bash
    docker-compose build --no-cache
    ```
 
 2. **Restart with Zero Downtime**
+
    ```bash
    docker-compose up -d --no-deps --build bopds
    ```
