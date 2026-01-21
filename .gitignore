@@ -4,7 +4,6 @@ bopds
 *.db
 *.db-shm
 *.db-wal
-go.sum
 *.fb2
 *.mobi
 *.epub
