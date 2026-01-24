@@ -1,7 +1,7 @@
 services:
   bopds:
-    image: bopds:production
-    container_name: bopds-server
+    image: ghcr.io/htol/bopds:latest
+    container_name: bopds
     restart: unless-stopped
 
     ports:
@@ -21,7 +21,7 @@ services:
       - ${LIBRARY_PATH:-./lib}:/library:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      test: [ "CMD", "curl", "-f", "http://localhost:3001/" ]
       interval: 30s
       timeout: 3s
       retries: 3

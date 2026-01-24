@@ -1,7 +1,7 @@
 services:
   bopds-dev:
     image: bopds:development
-    container_name: bopds-dev-server
+    container_name: bopds-dev
     build:
       context: .
       target: development
@@ -37,7 +37,7 @@ services:
     stdin_open: true
     tty: true
 
-    command: ["air", "-c", ".air.toml"]
+    command: [ "air", "-c", ".air.toml" ]
 
 volumes:
   db-dev-data:

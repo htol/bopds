@@ -50,13 +50,13 @@ See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for detailed Docker deployment 
 
 ```bash
 # Build and run
-docker-compose up -d
+docker compose up -d
 
 # Initialize database
-docker-compose exec bopds /app/bopds init
+docker compose exec bopds /app/bopds init
 
 # Scan library
-docker-compose exec bopds /app/bopds scan
+docker compose exec bopds /app/bopds scan
 ```
 
 ## Library Structure
@@ -79,6 +79,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [SQLite](https://www.sqlite.org/) database
 - [Vue.js](https://vuejs.org/) framework
 - [Tailwind CSS](https://tailwindcss.com/) utility-first CSS framework
+
+## CI/CD
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ## Support
 
