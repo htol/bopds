@@ -1,9 +1,7 @@
 package repo
 
 import (
-	"bytes"
 	"encoding/xml"
-	"log"
 	"os"
 	"testing"
 
@@ -23,14 +21,14 @@ func cleanupTestDB(path string) {
 }
 
 // getOrCreateAuthorHelper wraps the internal getOrCreateAuthor in a transaction for testing
-func getOrCreateAuthorHelper(db *Repo, authors []book.Author) ([]int64, error) {
+func getOrCreateAuthorHelper(t testing.TB, db *Repo, authors []book.Author) ([]int64, error) {
 	tx, err := db.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Failed to rollback transaction: %v", err)
+			t.Logf("Failed to rollback transaction: %v", err)
 		}
 	}()
 	ids, err := db.getOrCreateAuthor(tx, authors)
@@ -58,7 +56,7 @@ func TestGetOrCreateAuthor(t *testing.T) {
 			MiddleName: "Петрович",
 			LastName:   "Иванов"},
 	}
-	authorIDs, err := getOrCreateAuthorHelper(db, authors)
+	authorIDs, err := getOrCreateAuthorHelper(t, db, authors)
 	if err != nil {
 		t.Fatalf("getOrCreateAuthor failed: %v", err)
 	}
@@ -77,17 +75,10 @@ func TestAdd(t *testing.T) {
 		cleanupTestDB(dbPath)
 	}()
 
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer func() {
-		log.SetOutput(os.Stderr)
-	}()
-
 	book := &book.Book{XMLName: xml.Name{Space: "", Local: ""}, Author: []book.Author{{XMLName: xml.Name{Space: "", Local: ""}, FirstName: "Пьер", MiddleName: "", LastName: "Абеляр"}}, Title: "История моих бедствий", Lang: "ru", Genres: []string{"sci_philosophy"}, Archive: "", FileName: "125.fb2"}
 
 	if err := db.Add(book); err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	t.Log(buf.String())
 }

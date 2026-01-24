@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/logger"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -83,7 +83,7 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 	g.Go(func() error {
 		defer wg.Done()
 		if len(inpxs) > 0 {
-			log.Println("Present indexes: ", inpxs)
+			logger.Info("Present indexes", "files", inpxs)
 			if err = checkInpxFiles(ctx, basedir, inpxs, entries); err != nil {
 				return err
 			}
@@ -103,7 +103,7 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 			batch = append(batch, entry)
 			if len(batch) >= batchSize {
 				if err := storage.AddBatch(batch); err != nil {
-					log.Printf("failed to add batch: %v", err)
+					logger.Error("failed to add batch", "error", err)
 				}
 				// Keep capacity, reset length
 				batch = batch[:0]
@@ -111,7 +111,7 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 		}
 		if len(batch) > 0 {
 			if err := storage.AddBatch(batch); err != nil {
-				log.Printf("failed to add batch: %v", err)
+				logger.Error("failed to add batch", "error", err)
 			}
 		}
 	}()
@@ -148,12 +148,12 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 				}
 			}
 
-			log.Printf("Processing archive: %s", libArchiveFile)
+			logger.Info("Processing archive", "file", libArchiveFile)
 			startTime := time.Now()
 
 			content, err := archiveEntry.Open()
 			if err != nil {
-				log.Printf("Failed to read %s in zip: %s", archiveEntry.Name, err)
+				logger.Error("Failed to read file in zip", "entry", archiveEntry.Name, "error", err)
 				continue
 			}
 			defer content.Close()
@@ -177,9 +177,9 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 				}
 			}
 			if err := scanner.Err(); err != nil {
-				log.Printf("Scanner error on %s: %s", archiveEntry.Name, err)
+				logger.Error("Scanner error", "entry", archiveEntry.Name, "error", err)
 			}
-			log.Printf("Finished processing %s in %v", libArchiveFile, time.Since(startTime))
+			logger.Info("Finished processing archive", "file", libArchiveFile, "duration", time.Since(startTime))
 		}
 	}
 	return nil
