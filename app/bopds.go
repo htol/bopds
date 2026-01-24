@@ -27,7 +27,6 @@ import (
 type Server struct {
 	storage     *repo.Repo
 	service     *service.Service
-	server      *http.Server
 	config      *config.Config
 	libraryPath string
 }
@@ -55,9 +54,11 @@ func respondWithError(w http.ResponseWriter, message string, err error, statusCo
 	logger.Error(message, "error", err, "status", statusCode)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": message,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode error response", "error", err)
+	}
 }
 
 // respondWithValidationError sends a validation error response as JSON
@@ -65,9 +66,11 @@ func respondWithValidationError(w http.ResponseWriter, message string) {
 	logger.Warn("Validation error", "message", message)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": message,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode validation error", "error", err)
+	}
 }
 
 func CLI(args []string) int {
@@ -322,7 +325,9 @@ func getAuthorsByLetterHandler(svc *service.Service) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(authors)
+		if err := json.NewEncoder(w).Encode(authors); err != nil {
+			logger.Error("Failed to encode authors response", "error", err)
+		}
 	}
 	return http.HandlerFunc(hf)
 }
@@ -351,7 +356,9 @@ func getAuthorByIDHandler(svc *service.Service) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(author)
+		if err := json.NewEncoder(w).Encode(author); err != nil {
+			logger.Error("Failed to encode author response", "error", err)
+		}
 	}
 	return http.HandlerFunc(hf)
 }
@@ -376,7 +383,9 @@ func getBooksByAuthorIDHandler(svc *service.Service) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(books)
+		if err := json.NewEncoder(w).Encode(books); err != nil {
+			logger.Error("Failed to encode books response", "error", err)
+		}
 	}
 	return http.HandlerFunc(hf)
 }
@@ -450,7 +459,9 @@ func searchBooksHandler(svc *service.Service) http.Handler {
 
 		// Return JSON response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
+		if err := json.NewEncoder(w).Encode(results); err != nil {
+			logger.Error("Failed to encode search results", "error", err)
+		}
 	})
 }
 func authorsAPIHandler(svc *service.Service) http.Handler {
@@ -480,7 +491,9 @@ func getBooksByLetterHandler(svc *service.Service) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(books)
+		if err := json.NewEncoder(w).Encode(books); err != nil {
+			logger.Error("Failed to encode books response", "error", err)
+		}
 	}
 	return http.HandlerFunc(hf)
 }
@@ -494,7 +507,9 @@ func getGenresHandler(svc *service.Service) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(genres)
+		if err := json.NewEncoder(w).Encode(genres); err != nil {
+			logger.Error("Failed to encode genres response", "error", err)
+		}
 	})
 }
 
@@ -523,9 +538,11 @@ func healthCheckHandler(svc *service.Service) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status": "healthy",
-		})
+		}); err != nil {
+			logger.Error("Failed to encode health check response", "error", err)
+		}
 	}
 }
 

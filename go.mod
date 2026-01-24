@@ -7,8 +7,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/htol/fb2c v0.0.0-20260121141519-1528098abbf0
 	github.com/mattn/go-sqlite3 v1.14.14
-	golang.org/x/net v0.44.0
 	golang.org/x/sync v0.19.0
+	golang.org/x/text v0.33.0
 )
 
 require (
@@ -21,5 +21,4 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
-	golang.org/x/text v0.33.0 // indirect
 )

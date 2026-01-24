@@ -18,8 +18,7 @@ var translitMap = map[rune]string{
 // Translit converting Russian cyrillic characters to Latin approximation
 func Translit(s string) string {
 	var builder strings.Builder
-	runes := []rune(s)
-	for _, r := range runes {
+	for _, r := range s {
 		if val, ok := translitMap[r]; ok {
 			builder.WriteString(val)
 		} else {

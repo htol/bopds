@@ -307,17 +307,6 @@ func FormatBookFilename(b *book.Book, format string) string {
 	return filename + "." + format
 }
 
-// validatePath checks that a path is safe (no directory traversal)
-func validatePath(path string) error {
-	if strings.Contains(path, "..") {
-		return fmt.Errorf("path contains directory traversal")
-	}
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("path must be absolute")
-	}
-	return nil
-}
-
 // validateFilename checks that a filename is safe
 func validateFilename(filename string) error {
 	if strings.Contains(filename, "..") {

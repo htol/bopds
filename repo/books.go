@@ -14,6 +14,8 @@ import (
 	"github.com/htol/bopds/config"
 	"github.com/htol/bopds/logger"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func escapeFTS5Query(query string) string {
@@ -415,7 +417,11 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			logger.Error("Failed to rollback transaction", "error", err)
+		}
+	}()
 
 	// New Bulk Strategy
 	// 1. Insert Books in chunks and get IDs
@@ -904,33 +910,6 @@ func (r *Repo) List() error {
 	return nil
 }
 
-// Get or create series
-func (r *Repo) getOrCreateSeries(tx *sql.Tx, name string) (int64, error) {
-	var seriesID int64
-	err := tx.QueryRow(`SELECT series_id FROM series WHERE name = ?`, name).Scan(&seriesID)
-	if err == sql.ErrNoRows {
-		result, err := tx.Exec(`INSERT INTO series(name) VALUES(?)`, name)
-		if err != nil {
-			return 0, err
-		}
-		return result.LastInsertId()
-	}
-	return seriesID, err
-}
-
-func (r *Repo) getOrCreateKeyword(tx *sql.Tx, name string) (int64, error) {
-	var keywordID int64
-	err := tx.QueryRow(`SELECT keyword_id FROM keywords WHERE name = ?`, name).Scan(&keywordID)
-	if err == sql.ErrNoRows {
-		result, err := tx.Exec(`INSERT INTO keywords(name) VALUES(?)`, name)
-		if err != nil {
-			return 0, err
-		}
-		return result.LastInsertId()
-	}
-	return keywordID, err
-}
-
 func (r *Repo) getOrCreateAuthor(tx *sql.Tx, authors []book.Author) ([]int64, error) {
 	if len(authors) < 1 {
 		return nil, nil
@@ -1014,7 +993,7 @@ func (r *Repo) GetAuthors() ([]book.Author, error) {
 }
 
 func (r *Repo) GetAuthorsByLetter(letters string) ([]book.Author, error) {
-	pattern := strings.Title(letters) + "%"
+	pattern := cases.Title(language.Und, cases.NoLower).String(letters) + "%"
 	QUERY := `
 		SELECT DISTINCT a.author_id, a.first_name, a.middle_name, a.last_name
 		FROM authors a
@@ -1081,7 +1060,7 @@ func (r *Repo) GetAuthorsWithBookCount() ([]book.AuthorWithBookCount, error) {
 }
 
 func (r *Repo) GetAuthorsWithBookCountByLetter(letters string) ([]book.AuthorWithBookCount, error) {
-	pattern := strings.Title(letters) + "%"
+	pattern := cases.Title(language.Und, cases.NoLower).String(letters) + "%"
 	QUERY := `
 		SELECT a.author_id, a.first_name, a.middle_name, a.last_name,
 			   COUNT(b.book_id) as book_count
@@ -1170,7 +1149,7 @@ func (r *Repo) GetBooks() ([]string, error) {
 }
 
 func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
-	pattern := strings.Title(letters) + "%"
+	pattern := cases.Title(language.Und, cases.NoLower).String(letters) + "%"
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
@@ -2131,7 +2110,9 @@ func (r *Repo) SyncGenreDisplayNames() {
 	stmt, err := tx.Prepare(`UPDATE genres SET display_name = ?, translit_name = ? WHERE name = ?`)
 	if err != nil {
 		logger.Error("Failed to prepare statement for genre update", "error", err)
-		tx.Rollback()
+		if err := tx.Rollback(); err != nil {
+			logger.Error("Failed to rollback transaction", "error", err)
+		}
 		return
 	}
 	defer stmt.Close()

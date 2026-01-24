@@ -4,10 +4,8 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -17,9 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bodgit/sevenzip"
 	"github.com/htol/bopds/book"
-	"golang.org/x/net/html/charset"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -189,11 +185,6 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 	return nil
 }
 
-func parseInp(reader *io.ReadCloser) error {
-
-	return nil
-}
-
 func parseInpEntry(entry []string) *book.Book {
 	const (
 		listSep = ":"
@@ -326,100 +317,4 @@ func parseKeywords(field string) []string {
 		}
 	}
 	return result
-}
-
-func checkFilesContent(files []string) error {
-	for _, file := range files {
-		if strings.HasSuffix(file, ".zip") {
-			arch, err := zip.OpenReader(file)
-			if err != nil {
-				return fmt.Errorf("open zip %s: %w", file, err)
-			}
-			defer arch.Close()
-
-			for _, entry := range arch.File {
-				content, err := entry.Open()
-				if err != nil {
-					log.Printf("Failed to read %s in zip: %s", entry.Name, err)
-					continue
-				}
-				defer content.Close()
-
-				if err = bookReader(content); err != nil {
-					log.Printf("fail to read book %s", err)
-				}
-			}
-
-		} else if strings.HasSuffix(file, ".7z") {
-			arch, err := sevenzip.OpenReader(file)
-			if err != nil {
-				return fmt.Errorf("open 7z %s: %w", file, err)
-			}
-			defer arch.Close()
-
-			for _, entry := range arch.File {
-				content, err := entry.Open()
-				if err != nil {
-					log.Printf("Failed to read %s in 7z: %s", entry.Name, err)
-					continue
-				}
-				defer content.Close()
-
-				if err = bookReader(content); err != nil {
-					log.Printf("fail to read book %s", err)
-				}
-			}
-
-		} else if strings.HasSuffix(file, ".fb2") {
-
-			book, err := os.Open(file)
-			if err != nil {
-				return err
-			}
-			defer book.Close()
-
-			err = bookReader(book)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func bookReader(bookContent io.ReadCloser) error {
-	decoder := xml.NewDecoder(bookContent)
-	decoder.CharsetReader = charset.NewReaderLabel
-
-	var b book.Book
-
-	for t, err := decoder.Token(); t != nil; t, err = decoder.Token() {
-		if err != nil {
-			return err
-		}
-
-		switch se := t.(type) {
-		case xml.StartElement:
-			if se.Name.Local == "title-info" {
-				err = decoder.DecodeElement(&b, &se)
-				if err != nil {
-					return err
-				}
-			}
-
-		case xml.EndElement:
-			// fmt.Printf("e: %+v\n\n", se.Name.Local)
-			break
-
-		default:
-			//fmt.Printf("d: %+v\n\n", se)
-		}
-	}
-
-	if len(b.Title) == 0 {
-		fmt.Println("   ---   Title not found")
-		return nil
-	}
-
-	return nil
 }

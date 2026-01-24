@@ -28,7 +28,11 @@ func getOrCreateAuthorHelper(db *Repo, authors []book.Author) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Failed to rollback transaction: %v", err)
+		}
+	}()
 	ids, err := db.getOrCreateAuthor(tx, authors)
 	if err != nil {
 		return nil, err
@@ -81,7 +85,9 @@ func TestAdd(t *testing.T) {
 
 	book := &book.Book{XMLName: xml.Name{Space: "", Local: ""}, Author: []book.Author{{XMLName: xml.Name{Space: "", Local: ""}, FirstName: "Пьер", MiddleName: "", LastName: "Абеляр"}}, Title: "История моих бедствий", Lang: "ru", Genres: []string{"sci_philosophy"}, Archive: "", FileName: "125.fb2"}
 
-	db.Add(book)
+	if err := db.Add(book); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
 
 	t.Log(buf.String())
 }

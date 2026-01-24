@@ -32,8 +32,12 @@ func respondWithOPDS(w http.ResponseWriter, feed *opds.Feed, contentType string)
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(xml.Header))
-	w.Write(output)
+	if _, err := w.Write([]byte(xml.Header)); err != nil {
+		logger.Error("Failed to write XML header", "error", err)
+	}
+	if _, err := w.Write(output); err != nil {
+		logger.Error("Failed to write OPDS feed", "error", err)
+	}
 }
 
 // getBaseURL extracts the base URL from the request
@@ -106,7 +110,9 @@ func opdsOpenSearchHandler(svc *service.Service) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", opds.TypeOpenSearch+"; charset=utf-8")
-		w.Write(output)
+		if _, err := w.Write(output); err != nil {
+			logger.Error("Failed to write OpenSearch description", "error", err)
+		}
 	})
 }
 
