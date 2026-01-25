@@ -16,20 +16,19 @@ bopds is a Basic OPDS server that serves FB2 books. It consists of:
 
 ```bash
 # Build backend (builds frontend too)
-make build
+make backend
 
 # Run all tests
-go test ./...
+make test
 
 # Run single test
-go test -run TestName ./path/to/package
+go test -tags "sqlite_omit_load_extension,fts5" -run TestName ./path/to/package
 
 # Run tests with verbose output
-go test -v ./path/to/package
+go test -tags "sqlite_omit_load_extension,fts5" -v ./path/to/package
 
 # Run server
-make serve
-# or: ./bopds serve
+air
 
 # Initialize database
 make init

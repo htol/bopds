@@ -25,6 +25,21 @@
 
         <!-- Meta Info Row -->
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
+          <!-- Language -->
+          <div v-if="book.lang" class="flex items-center gap-1 w-8 shrink-0">
+            <span class="uppercase font-mono bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+              {{ book.lang }}
+            </span>
+          </div>
+
+          <!-- Size -->
+          <div v-if="bookFileSize" class="flex items-center gap-1 w-20 shrink-0 whitespace-nowrap">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+            </svg>
+            <span>{{ bookFileSize }}</span>
+          </div>
+
           <!-- Series -->
           <div v-if="bookSeries" class="flex items-center gap-1 text-accent-secondary">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -33,21 +48,6 @@
             <span class="font-medium bg-accent-secondary/10 px-1.5 py-0.5 rounded">
               {{ bookSeries }}
             </span>
-          </div>
-
-          <!-- Language -->
-          <div v-if="book.Lang || book.lang" class="flex items-center gap-1">
-            <span class="uppercase font-mono bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-              {{ book.Lang || book.lang }}
-            </span>
-          </div>
-
-          <!-- Size -->
-          <div v-if="formattedSize" class="flex items-center gap-1">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-            </svg>
-            <span>{{ formattedSize }}</span>
           </div>
         </div>
 
@@ -126,7 +126,7 @@ const bookSeries = computed(() => {
   return no ? `${name} #${no}` : name
 })
 
-const formattedSize = computed(() => {
+const bookFileSize = computed(() => {
   const bytes = props.book.file_size || props.book.FileSize
   if (!bytes) return null
   
