@@ -1,0 +1,295 @@
+[warning] build.bin is deprecated; set build.entrypoint instead
+
+  __    _   ___  
+ / /\  | | | |_) 
+/_/--\ |_| |_| \_ v1.64.0, built with Go go1.25.5 X:nodwarf5
+
+watching .
+watching app
+watching book
+watching config
+watching converter
+!exclude frontend
+!exclude lib
+watching logger
+watching middleware
+watching opds
+watching repo
+watching scanner
+watching service
+!exclude tmp
+watching validator
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/app
+app/opds_handlers.go:146:65: not enough arguments in call to svc.SearchBooks
+	have (context.Context, string, int, int, nil)
+	want (context.Context, string, int, int, []string, []string)
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T19:15:22.149277144+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T19:15:22.149495634+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/app
+app/opds_handlers.go:146:65: not enough arguments in call to svc.SearchBooks
+	have (context.Context, string, int, int, nil)
+	want (context.Context, string, int, int, []string, []string)
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T19:16:12.824737603+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T19:16:12.824886793+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+app/opds_handlers.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T19:16:46.439093023+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T19:17:02.955735663+01:00","level":"INFO","msg":"SearchBooks JSON Debug","query":"\n\t\tSELECT\n\t\t\tb.book_id,\n\t\t\tb.title,\n\t\t\tb.lang,\n\t\t\tb.archive,\n\t\t\tb.filename,\n\t\t\tb.file_size,\n\t\t\tb.deleted,\n\t\t\ts.name as series_name,\n\t\t\tbs.series_no,\n\t\t\tfts.rank,\n\t\t\tgroup_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,\n\t\t\tgroup_concat(distinct g.display_name) as genres\n\t\tFROM books_fts fts\n\t\tJOIN books b ON fts.book_id = b.book_id\n\t\tLEFT JOIN book_authors ba ON b.book_id = ba.book_id\n\t\tLEFT JOIN authors a ON ba.author_id = a.author_id\n\t\tLEFT JOIN book_series bs ON b.book_id = bs.book_id\n\t\tLEFT JOIN series s ON bs.series_id = s.series_id\n\t\tLEFT JOIN book_genres bg ON b.book_id = bg.book_id\n\t\tLEFT JOIN genres g ON bg.genre_id = g.genre_id\n\t\tWHERE books_fts MATCH ? AND b.deleted = 0 AND b.lang IN (?)\n\t\tGROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank\n\t\tORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE\n\t\tLIMIT ? OFFSET ?\n\t","args":["Ксанф*","en",20,0],"lang_count":1}
+{"time":"2026-01-25T19:17:02.957112814+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&lang=en","status":200,"duration":1445911,"request_id":null,"remote_addr":"[::1]:48274","user_agent":"curl/8.18.0"}
+{"time":"2026-01-25T19:17:22.607102427+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/","query":"","status":304,"duration":77730,"request_id":null,"remote_addr":"127.0.0.1:40428","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:17:22.614973999+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-uIkX_6fF.css","query":"","status":304,"duration":45860,"request_id":null,"remote_addr":"127.0.0.1:40428","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:17:22.61509111+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-BfG6SDs4.js","query":"","status":304,"duration":34960,"request_id":null,"remote_addr":"127.0.0.1:40444","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:17:22.864049426+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/favicon.ico","query":"","status":404,"duration":38910,"request_id":null,"remote_addr":"127.0.0.1:40460","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.104.0 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36"}
+{"time":"2026-01-25T19:17:29.345520286+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/favicon.ico","query":"","status":404,"duration":34880,"request_id":null,"remote_addr":"127.0.0.1:60836","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.104.0 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36"}
+{"time":"2026-01-25T19:17:39.864174813+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/favicon.ico","query":"","status":404,"duration":37190,"request_id":null,"remote_addr":"127.0.0.1:55468","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.104.0 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36"}
+{"time":"2026-01-25T19:17:39.877157817+01:00","level":"INFO","msg":"SearchBooks JSON Debug","query":"\n\t\tSELECT\n\t\t\tb.book_id,\n\t\t\tb.title,\n\t\t\tb.lang,\n\t\t\tb.archive,\n\t\t\tb.filename,\n\t\t\tb.file_size,\n\t\t\tb.deleted,\n\t\t\ts.name as series_name,\n\t\t\tbs.series_no,\n\t\t\tfts.rank,\n\t\t\tgroup_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,\n\t\t\tgroup_concat(distinct g.display_name) as genres\n\t\tFROM books_fts fts\n\t\tJOIN books b ON fts.book_id = b.book_id\n\t\tLEFT JOIN book_authors ba ON b.book_id = ba.book_id\n\t\tLEFT JOIN authors a ON ba.author_id = a.author_id\n\t\tLEFT JOIN book_series bs ON b.book_id = bs.book_id\n\t\tLEFT JOIN series s ON bs.series_id = s.series_id\n\t\tLEFT JOIN book_genres bg ON b.book_id = bg.book_id\n\t\tLEFT JOIN genres g ON bg.genre_id = g.genre_id\n\t\tWHERE books_fts MATCH ? AND b.deleted = 0\n\t\tGROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank\n\t\tORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE\n\t\tLIMIT ? OFFSET ?\n\t","args":["Ксанф*",20,0],"lang_count":0}
+{"time":"2026-01-25T19:17:39.877733097+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0","status":200,"duration":603740,"request_id":null,"remote_addr":"127.0.0.1:40444","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:17:57.188178362+01:00","level":"INFO","msg":"SearchBooks JSON Debug","query":"\n\t\tSELECT\n\t\t\tb.book_id,\n\t\t\tb.title,\n\t\t\tb.lang,\n\t\t\tb.archive,\n\t\t\tb.filename,\n\t\t\tb.file_size,\n\t\t\tb.deleted,\n\t\t\ts.name as series_name,\n\t\t\tbs.series_no,\n\t\t\tfts.rank,\n\t\t\tgroup_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,\n\t\t\tgroup_concat(distinct g.display_name) as genres\n\t\tFROM books_fts fts\n\t\tJOIN books b ON fts.book_id = b.book_id\n\t\tLEFT JOIN book_authors ba ON b.book_id = ba.book_id\n\t\tLEFT JOIN authors a ON ba.author_id = a.author_id\n\t\tLEFT JOIN book_series bs ON b.book_id = bs.book_id\n\t\tLEFT JOIN series s ON bs.series_id = s.series_id\n\t\tLEFT JOIN book_genres bg ON b.book_id = bg.book_id\n\t\tLEFT JOIN genres g ON bg.genre_id = g.genre_id\n\t\tWHERE books_fts MATCH ? AND b.deleted = 0 AND b.lang IN (?)\n\t\tGROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank\n\t\tORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE\n\t\tLIMIT ? OFFSET ?\n\t","args":["Ксанф*","en",20,0],"lang_count":1}
+{"time":"2026-01-25T19:17:57.188567722+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=en","status":200,"duration":420040,"request_id":null,"remote_addr":"127.0.0.1:40444","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:17:58.603437151+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/favicon.ico","query":"","status":404,"duration":43370,"request_id":null,"remote_addr":"127.0.0.1:41386","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.104.0 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36"}
+{"time":"2026-01-25T19:18:04.896900437+01:00","level":"INFO","msg":"SearchBooks JSON Debug","query":"\n\t\tSELECT\n\t\t\tb.book_id,\n\t\t\tb.title,\n\t\t\tb.lang,\n\t\t\tb.archive,\n\t\t\tb.filename,\n\t\t\tb.file_size,\n\t\t\tb.deleted,\n\t\t\ts.name as series_name,\n\t\t\tbs.series_no,\n\t\t\tfts.rank,\n\t\t\tgroup_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,\n\t\t\tgroup_concat(distinct g.display_name) as genres\n\t\tFROM books_fts fts\n\t\tJOIN books b ON fts.book_id = b.book_id\n\t\tLEFT JOIN book_authors ba ON b.book_id = ba.book_id\n\t\tLEFT JOIN authors a ON ba.author_id = a.author_id\n\t\tLEFT JOIN book_series bs ON b.book_id = bs.book_id\n\t\tLEFT JOIN series s ON bs.series_id = s.series_id\n\t\tLEFT JOIN book_genres bg ON b.book_id = bg.book_id\n\t\tLEFT JOIN genres g ON bg.genre_id = g.genre_id\n\t\tWHERE books_fts MATCH ? AND b.deleted = 0 AND b.lang IN (?,?)\n\t\tGROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank\n\t\tORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE\n\t\tLIMIT ? OFFSET ?\n\t","args":["Ксанф*","en","ru",20,0],"lang_count":2}
+{"time":"2026-01-25T19:18:04.897487077+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=en,ru","status":200,"duration":632970,"request_id":null,"remote_addr":"127.0.0.1:40444","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T19:18:06.430695937+01:00","level":"INFO","msg":"SearchBooks JSON Debug","query":"\n\t\tSELECT\n\t\t\tb.book_id,\n\t\t\tb.title,\n\t\t\tb.lang,\n\t\t\tb.archive,\n\t\t\tb.filename,\n\t\t\tb.file_size,\n\t\t\tb.deleted,\n\t\t\ts.name as series_name,\n\t\t\tbs.series_no,\n\t\t\tfts.rank,\n\t\t\tgroup_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,\n\t\t\tgroup_concat(distinct g.display_name) as genres\n\t\tFROM books_fts fts\n\t\tJOIN books b ON fts.book_id = b.book_id\n\t\tLEFT JOIN book_authors ba ON b.book_id = ba.book_id\n\t\tLEFT JOIN authors a ON ba.author_id = a.author_id\n\t\tLEFT JOIN book_series bs ON b.book_id = bs.book_id\n\t\tLEFT JOIN series s ON bs.series_id = s.series_id\n\t\tLEFT JOIN book_genres bg ON b.book_id = bg.book_id\n\t\tLEFT JOIN genres g ON bg.genre_id = g.genre_id\n\t\tWHERE books_fts MATCH ? AND b.deleted = 0 AND b.lang IN (?)\n\t\tGROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank\n\t\tORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE\n\t\tLIMIT ? OFFSET ?\n\t","args":["Ксанф*","ru",20,0],"lang_count":1}
+{"time":"2026-01-25T19:18:06.431246427+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru","status":200,"duration":594930,"request_id":null,"remote_addr":"127.0.0.1:40444","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T19:18:42.804827612+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T19:27:16.215701521+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T19:27:35.005987327+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=1","status":200,"duration":732900,"request_id":null,"remote_addr":"[::1]:54532","user_agent":"curl/8.18.0"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:1942:41: undefined: buildPlaceholders
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:04:14.56583528+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:04:28.140013683+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:1941:41: undefined: buildPlaceholders
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:16:25.482937413+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:16:47.42827802+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:17:04.953811008+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:17:28.063111788+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:17:38.998482608+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=1","status":200,"duration":758100,"request_id":null,"remote_addr":"[::1]:40000","user_agent":"curl/8.18.0"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:1970:5: undefined: langCondition
+repo/books.go:1972:3: undefined: langCondition
+repo/books.go:1975:28: undefined: langCondition
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:23:47.772800466+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:1968:5: undefined: langCondition
+repo/books.go:1970:3: undefined: langCondition
+repo/books.go:1973:28: undefined: langCondition
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:24:40.19818118+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:1968:5: undefined: langCondition
+repo/books.go:1970:3: undefined: langCondition
+repo/books.go:1973:28: undefined: langCondition
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:24:55.637272367+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:27:50.885307211+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:28:01.966650572+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:28:29.859814105+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%9A%D1%81%D0%B0%D0%BD%D1%84&limit=1","status":200,"duration":1039380,"request_id":null,"remote_addr":"[::1]:57312","user_agent":"curl/8.18.0"}
+{"time":"2026-01-25T20:29:13.55276034+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/","query":"","status":200,"duration":1184530,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:13.563270564+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-uIkX_6fF.css","query":"","status":200,"duration":84440,"request_id":null,"remote_addr":"[::1]:45962","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:13.563299454+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-BfG6SDs4.js","query":"","status":200,"duration":158970,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:13.772885566+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/favicon.ico","query":"","status":404,"duration":34010,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:18.177985129+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA&limit=20&offset=0","status":200,"duration":31794351,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:19.570848251+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81&limit=20&offset=0","status":200,"duration":720571,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:20.083700248+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0&limit=20&offset=0","status":200,"duration":549150,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:20.875179311+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%B3&limit=20&offset=0","status":200,"duration":192490,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:21.635873674+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0&limit=20&offset=0","status":200,"duration":521430,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:22.699295662+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0","status":200,"duration":498820,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:29.977931858+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru","status":200,"duration":428110,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:32.443123961+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru,en","status":200,"duration":495351,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:33.3389007+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru,en,uk","status":200,"duration":541840,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:33.74282261+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru,en,uk,be","status":200,"duration":488120,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:34.345543438+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=en,uk,be","status":200,"duration":319750,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:35.427284262+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=en,uk,be,ru","status":200,"duration":473900,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:36.030866351+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=uk,be,ru","status":200,"duration":651530,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:36.60587415+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=be,ru","status":200,"duration":618541,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:37.103737932+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0&lang=ru","status":200,"duration":438750,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:29:39.054718176+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/api/search","query":"q=%D0%BA%D1%81%D0%B0%D0%BD%D1%84&limit=20&offset=0","status":200,"duration":425110,"request_id":null,"remote_addr":"[::1]:45956","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+repo/repository.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:62:20: cannot use (*Repo)(nil) (value of type *Repo) as Repository value in variable declaration: *Repo does not implement Repository (missing method GetLanguages)
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:32:58.379855254+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:32:58.380037124+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:2156:2: declared and not used: QUERY
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:33:00.092140106+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+service/service.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/repo
+repo/books.go:2156:2: declared and not used: QUERY
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:33:11.466691519+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:33:17.918345639+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/","query":"","status":304,"duration":73420,"request_id":null,"remote_addr":"[::1]:49736","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:33:17.929309013+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-BfG6SDs4.js","query":"","status":304,"duration":28250,"request_id":null,"remote_addr":"[::1]:49736","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:33:17.929501123+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/assets/index-uIkX_6fF.css","query":"","status":304,"duration":37200,"request_id":null,"remote_addr":"[::1]:49744","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:33:21.427042042+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/","query":"","status":304,"duration":49430,"request_id":null,"remote_addr":"[::1]:49744","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+{"time":"2026-01-25T20:33:22.9533554+01:00","level":"INFO","msg":"HTTP request","method":"GET","path":"/","query":"","status":304,"duration":52150,"request_id":null,"remote_addr":"[::1]:49744","user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:33:26.524207754+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:33:26.524418914+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/app
+app/bopds.go:296:28: undefined: loggingMiddleware
+app/bopds.go:296:46: undefined: genresHandler
+app/bopds.go:297:31: undefined: loggingMiddleware
+app/bopds.go:297:49: undefined: getLanguagesHandler
+app/bopds.go:298:28: undefined: loggingMiddleware
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:33:54.692918802+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/app
+app/bopds.go:462:3: syntax error: unexpected ) at end of statement
+app/bopds.go:464:6: syntax error: unexpected name authorsAPIHandler, expected (
+app/bopds.go:477:6: syntax error: unexpected name getBooksByLetterHandler, expected (
+app/bopds.go:498:6: syntax error: unexpected name getGenresHandler, expected (
+app/bopds.go:513:6: syntax error: unexpected name withCORS, expected (
+app/bopds.go:526:6: syntax error: unexpected name healthCheckHandler, expected (
+app/bopds.go:546:6: syntax error: unexpected name downloadBookHandler, expected (
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:34:03.230278134+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:34:03.230436894+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+# github.com/htol/bopds/app
+app/bopds.go:297:40: undefined: getLanguagesHandler
+make: *** [Makefile:14: backend] Error 1
+failed to build, error: exit status 2
+running...
+{"time":"2026-01-25T20:35:00.787896812+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:35:12.039307921+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:35:12.039475281+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:52:19.747153197+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:52:19.747330027+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+app/bopds.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:52:21.783755441+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:52:21.783935101+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:52:26.678843003+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+repo/books.go has changed
+building...
+CGO_ENABLED=1 go build -tags "sqlite_omit_load_extension,fts5"
+running...
+{"time":"2026-01-25T20:52:41.852858099+01:00","level":"INFO","msg":"Server listening","port":3001,"url":"http://localhost:3001"}
+{"time":"2026-01-25T20:52:41.853012479+01:00","level":"ERROR","msg":"Server error","error":"listen tcp :3001: bind: address already in use"}
+Process Exit with Code 0

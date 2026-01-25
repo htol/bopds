@@ -70,6 +70,11 @@ func (s *Service) GetBooks(ctx context.Context) ([]string, error) {
 	return books, nil
 }
 
+// GetLanguages returns all available languages
+func (s *Service) GetLanguages(ctx context.Context) ([]string, error) {
+	return s.repo.GetLanguages()
+}
+
 // GetBooksByLetter retrieves books whose title starts with the given letter(s)
 func (s *Service) GetBooksByLetter(ctx context.Context, letters string) ([]book.Book, error) {
 	if letters == "" {
@@ -186,12 +191,12 @@ func (s *Service) DownloadBookMOBI(ctx context.Context, id int64) (io.ReadCloser
 }
 
 // SearchBooks performs full-text search across books by title and/or author
-func (s *Service) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
+func (s *Service) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string, languages []string) ([]book.BookSearchResult, error) {
 	if query == "" {
 		return []book.BookSearchResult{}, nil
 	}
 
-	books, err := s.repo.SearchBooks(ctx, query, limit, offset, fields)
+	books, err := s.repo.SearchBooks(ctx, query, limit, offset, fields, languages)
 	if err != nil {
 		return nil, fmt.Errorf("search books: %w", err)
 	}

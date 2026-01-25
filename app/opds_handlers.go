@@ -143,7 +143,7 @@ func opdsSearchHandler(svc *service.Service) http.Handler {
 		}
 
 		offset := (page - 1) * pageSize
-		results, err := svc.SearchBooks(ctx, query, pageSize, offset, nil)
+		results, err := svc.SearchBooks(ctx, query, pageSize, offset, nil, nil)
 		if err != nil {
 			logger.Error("OPDS search failed", "query", query, "error", err)
 			http.Error(w, "Search failed", http.StatusInternalServerError)

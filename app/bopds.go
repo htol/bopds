@@ -294,6 +294,7 @@ func router(svc *service.Service) http.Handler {
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/books/", withCORS(downloadBookHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
+	mux.Handle("/api/languages", withCORS(getLanguagesHandler(svc)))
 	mux.Handle("/api/search", withCORS(searchBooksHandler(svc)))
 	mux.HandleFunc("/health", healthCheckHandler(svc))
 
@@ -450,8 +451,15 @@ func searchBooksHandler(svc *service.Service) http.Handler {
 			}
 		}
 
+		// Parse languages
+		langsStr := r.URL.Query().Get("lang")
+		var languages []string
+		if langsStr != "" {
+			languages = strings.Split(langsStr, ",")
+		}
+
 		// Perform search with context for cancellation
-		results, err := svc.SearchBooks(ctx, query, limit, offset, fields)
+		results, err := svc.SearchBooks(ctx, query, limit, offset, fields, languages)
 		if err != nil {
 			respondWithError(w, "Failed to search books", err, http.StatusInternalServerError)
 			return
@@ -509,6 +517,23 @@ func getGenresHandler(svc *service.Service) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(genres); err != nil {
 			logger.Error("Failed to encode genres response", "error", err)
+		}
+	})
+}
+
+// getLanguagesHandler handles the languages list endpoint
+func getLanguagesHandler(svc *service.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		languages, err := svc.GetLanguages(ctx)
+		if err != nil {
+			respondWithError(w, "Failed to fetch languages", err, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(languages); err != nil {
+			logger.Error("Failed to encode response", "error", err)
 		}
 	})
 }

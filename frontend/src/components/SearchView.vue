@@ -10,17 +10,36 @@
     </div>
 
     <!-- Filters Section -->
-    <div class="mb-8 flex flex-wrap gap-2 animate-fade-in-up">
-      <BaseButton
-         v-for="filter in availableFilters"
-         :key="filter.value"
-         @click="toggleFilter(filter.value)"
-         :variant="isFilterSelected(filter.value) ? 'primary' : 'outline'"
-         size="sm"
-         class="rounded-full transition-all duration-200"
-      >
-        {{ filter.label }}
-      </BaseButton>
+    <div class="mb-8 flex flex-wrap gap-4 items-center animate-fade-in-up">
+      <!-- Search Scope Filters -->
+      <div class="flex flex-wrap gap-2">
+        <BaseButton
+           v-for="filter in availableFilters"
+           :key="filter.value"
+           @click="toggleFilter(filter.value)"
+           :variant="isFilterSelected(filter.value) ? 'primary' : 'outline'"
+           size="sm"
+           class="rounded-full transition-all duration-200"
+        >
+          {{ filter.label }}
+        </BaseButton>
+      </div>
+
+      <!-- Language Dropdown -->
+      <div class="relative ml-auto">
+        <select
+          v-model="selectedLanguage"
+          @change="handleLanguageChange"
+          class="appearance-none bg-white border border-gray-300 text-gray-700 py-1 px-3 pr-8 rounded-full leading-tight focus:outline-none focus:bg-white focus:border-blue-500 text-sm h-8"
+        >
+          <option v-for="lang in languages" :key="lang" :value="lang">
+            {{ lang.toUpperCase() }}
+          </option>
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+          <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+        </div>
+      </div>
     </div>
 
     <!-- Error State -->
@@ -115,6 +134,9 @@ const availableFilters = [
 ]
 const selectedFilters = ref([]) // Array of selected filter values
 
+const languages = ref(['ru']) // Default fallback
+const selectedLanguage = ref('ru')
+
 const isFilterSelected = (value) => selectedFilters.value.includes(value)
 
 
@@ -147,7 +169,8 @@ const executeSearch = async (query) => {
   try {
     // Pass selected filters as fields to API
     const fields = selectedFilters.value.length > 0 ? selectedFilters.value : []
-    const newResults = await api.searchBooks(query, pageSize, 0, fields)
+    const langs = selectedLanguage.value ? [selectedLanguage.value] : []
+    const newResults = await api.searchBooks(query, pageSize, 0, fields, langs)
     results.value = newResults
     hasNoMoreResults.value = newResults.length < pageSize
     
@@ -182,6 +205,10 @@ const toggleFilter = (value) => {
   executeSearch(searchQuery.value)
 }
 
+const handleLanguageChange = () => {
+  executeSearch(searchQuery.value)
+}
+
 // Load more results (infinite scroll)
 const loadMore = async () => {
   // Guard checks
@@ -195,7 +222,8 @@ const loadMore = async () => {
   try {
     const offset = page.value * pageSize
     const fields = selectedFilters.value.length > 0 ? selectedFilters.value : []
-    const newResults = await api.searchBooks(searchQuery.value, pageSize, offset, fields)
+    const langs = selectedLanguage.value ? [selectedLanguage.value] : []
+    const newResults = await api.searchBooks(searchQuery.value, pageSize, offset, fields, langs)
 
     if (newResults.length === 0) {
       hasNoMoreResults.value = true
@@ -249,8 +277,30 @@ const handleDownload = async (bookId, format) => {
   }
 }
 
+// Fetch languages
+const fetchLanguages = async () => {
+  try {
+    const fetchedLangs = await api.getLanguages()
+    if (fetchedLangs && fetchedLangs.length > 0) {
+      languages.value = fetchedLangs
+      // Default to RU if available, otherwise keep existing default or first available
+      if (fetchedLangs.includes('ru')) {
+        selectedLanguage.value = 'ru'
+      } else if (fetchedLangs.length > 0) {
+        selectedLanguage.value = fetchedLangs[0]
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch languages:', err)
+    // Keep default fallbacks
+  }
+}
+
 // Lifecycle hooks
 onMounted(() => {
+  // Fetch languages
+  fetchLanguages()
+
   // Setup initial state from props
   if (props.initialQuery) {
     searchQuery.value = props.initialQuery

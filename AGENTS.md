@@ -188,7 +188,7 @@ func TestService_GetAuthors(t *testing.T) {
 
 #### Database Operations
 
-- Use prepared statements for all queries
+- Use prepared statements for all queries. ***NEVER*** use string interpolation in sql request.
 - Always handle `sql.ErrNoRows` explicitly (return sentinel error)
 - Use transactions for multi-step operations
 - Defer `Close()` on prepared statements and rows

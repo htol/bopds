@@ -52,7 +52,7 @@ func TestSearchBooks_NewFields(t *testing.T) {
 	}
 
 	// Perform search using SERIES NAME
-	results, err := db.SearchBooks(context.Background(), "Foundations", 10, 0, nil)
+	results, err := db.SearchBooks(context.Background(), "Foundations", 10, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("SearchBooks failed: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestSearchBooks_FieldFilters(t *testing.T) {
 
 	// Scenario 8: Search by Transliteration (nauchnaya -> Научная)
 	// This tests if the user can search using Latin characters for Russian terms.
-	results, err := db.SearchBooks(ctx, "nauchnaya", 10, 0, []string{"genre"})
+	results, err := db.SearchBooks(ctx, "nauchnaya", 10, 0, []string{"genre"}, nil)
 	if err != nil {
 		t.Fatalf("Search 'nauchnaya' failed: %v", err)
 	}

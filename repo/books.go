@@ -1904,7 +1904,7 @@ func (r *Repo) GetKeywords() ([]book.Keyword, error) {
 // SearchBooks performs full-text search across book titles and authors
 // Uses FTS5 for fast, ranked search results
 // Optimized with single query including author JOIN (fixes N+1 query issue)
-func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
+func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string, languages []string) ([]book.BookSearchResult, error) {
 	// Validate query
 	if query == "" {
 		return []book.BookSearchResult{}, nil
@@ -1933,9 +1933,14 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		ftsQuery = escapedQuery + "*"
 	}
 
+	// Base arguments required for building the query b.c. sql doesn't support slice arguments as IN clause
+	var args []interface{}
+	args = append(args, ftsQuery)
+
 	// Search FTS5 table and join back to books table for full details
 	// Uses book_id column for direct, accurate mapping
-	QUERY := `
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(`
 		SELECT
 			b.book_id,
 			b.title,
@@ -1957,13 +1962,37 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		LEFT JOIN series s ON bs.series_id = s.series_id
 		LEFT JOIN book_genres bg ON b.book_id = bg.book_id
 		LEFT JOIN genres g ON bg.genre_id = g.genre_id
-		WHERE books_fts MATCH ? AND b.deleted = 0
+		WHERE books_fts MATCH ? AND b.deleted = 0 `)
+
+	// Language filter condition
+	langCondition := ""
+	if len(languages) > 0 {
+		// Treat empty language as "ru"
+		// If "ru" is requested, also include "" (empty string) in the loop/IN clause
+		searchLangs := make([]string, 0, len(languages)+1)
+		for _, l := range languages {
+			searchLangs = append(searchLangs, l)
+			if strings.EqualFold(l, "ru") {
+				searchLangs = append(searchLangs, "")
+			}
+		}
+
+		lArgs, placeholders := buildSliceArgs(searchLangs)
+		langCondition = fmt.Sprintf("AND b.lang IN (%s)", placeholders)
+		args = append(args, lArgs...)
+	}
+	queryBuilder.WriteString(" ")
+	queryBuilder.WriteString(langCondition)
+
+	queryBuilder.WriteString(`
 		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank
 		ORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
-	`
+	`)
 
-	rows, err := r.db.QueryContext(ctx, QUERY, ftsQuery, limit, offset)
+	QUERY := queryBuilder.String()
+	args = append(args, limit, offset)
+	rows, err := r.db.QueryContext(ctx, QUERY, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search books: %w", err)
 	}
@@ -2131,4 +2160,49 @@ func (r *Repo) SyncGenreDisplayNames() {
 	} else if count > 0 {
 		logger.Info("Updated genre display/translit names", "new_count", count)
 	}
+}
+
+// GetLanguages returns a list of distinct languages from non-deleted books
+func (r *Repo) GetLanguages() ([]string, error) {
+	// Treat empty or null language as 'ru'
+	QUERY := `
+		SELECT DISTINCT 
+			CASE WHEN IFNULL(lang, '') = '' THEN 'ru' ELSE lang END as language 
+		FROM books 
+		WHERE deleted = 0 
+		ORDER BY language
+	`
+	rows, err := r.db.Query(QUERY)
+	if err != nil {
+		return nil, fmt.Errorf("get languages: %w", err)
+	}
+	defer rows.Close()
+
+	var languages []string
+	for rows.Next() {
+		var lang string
+		if err := rows.Scan(&lang); err != nil {
+			return nil, fmt.Errorf("scan language: %w", err)
+		}
+		languages = append(languages, lang)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate languages: %w", err)
+	}
+	return languages, nil
+}
+
+// buildSliceArgs generates placeholders and converts slice to []interface{}
+// e.g. buildSliceArgs([]string{"a", "b"}) -> ([]interface{}{"a", "b"}, "?,?")
+func buildSliceArgs(items []string) ([]interface{}, string) {
+	if len(items) == 0 {
+		return nil, ""
+	}
+	args := make([]interface{}, len(items))
+	placeholders := make([]string, len(items))
+	for i, item := range items {
+		args[i] = item
+		placeholders[i] = "?"
+	}
+	return args, strings.Join(placeholders, ",")
 }

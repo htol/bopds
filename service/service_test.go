@@ -166,8 +166,12 @@ func (m *mockRepository) List() error {
 	return nil
 }
 
-func (m *mockRepository) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error) {
+func (m *mockRepository) SearchBooks(ctx context.Context, query string, limit, offset int, fields []string, languages []string) ([]book.BookSearchResult, error) {
 	return []book.BookSearchResult{}, nil
+}
+
+func (m *mockRepository) GetLanguages() ([]string, error) {
+	return []string{"ru", "en"}, nil
 }
 
 func (m *mockRepository) RebuildFTSIndex() error {

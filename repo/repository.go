@@ -35,10 +35,13 @@ type Repository interface {
 
 	// SearchBooks performs full-text search across books by title and author
 	// Returns results ranked by relevance (FTS5 rank)
-	SearchBooks(ctx context.Context, query string, limit, offset int, fields []string) ([]book.BookSearchResult, error)
+	SearchBooks(ctx context.Context, query string, limit, offset int, fields []string, languages []string) ([]book.BookSearchResult, error)
 
 	// Genres
 	GetGenres() ([]book.Genre, error)
+
+	// Languages
+	GetLanguages() ([]string, error)
 
 	// Write operations
 	Add(record *book.Book) error
