@@ -56,11 +56,11 @@
           <BaseButton
             v-for="format in ['fb2', 'fb2.zip', 'epub', 'mobi']"
             :key="format"
-            :variant="isDownloading(format) ? 'accent' : 'outline'"
+            :variant="isDownloading(format) ? 'accent' : 'secondary'"
             size="xs"
             :loading="isDownloading(format)"
             :disabled="hasActiveDownload && !isDownloading(format)"
-            class="min-w-[4rem]"
+            class="min-w-[4rem] font-mono"
             @click.stop="handleDownload(format)"
           >
             {{ isDownloading(format) ? '' : format.toUpperCase() }}

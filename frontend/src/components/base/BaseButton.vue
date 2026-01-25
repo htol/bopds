@@ -20,7 +20,7 @@ const props = defineProps({
   variant: {
     type: String,
     default: 'primary',
-    validator: (val) => ['primary', 'accent', 'ghost'].includes(val)
+    validator: (val) => ['primary', 'secondary', 'accent', 'ghost'].includes(val)
   },
   size: {
     type: String,
@@ -76,6 +76,13 @@ const buttonClasses = computed(() => {
       'border', 'border-accent-primary', 'bg-accent-primary', 'text-white',
       'shadow-sm',
       'hover:bg-accent-hover',
+      'active:translate-y-0'
+    )
+  } else if (props.variant === 'secondary') {
+    classes.push(
+      'border', 'border-gray-200', 'bg-gray-50', 'text-gray-600',
+      'shadow-sm',
+      'hover:bg-white', 'hover:border-accent-primary', 'hover:text-accent-primary', 'hover:shadow-md',
       'active:translate-y-0'
     )
   } else if (props.variant === 'ghost') {
