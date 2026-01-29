@@ -1,17 +1,17 @@
 package repo
 
 import (
-	"os"
 	"testing"
 
 	"github.com/htol/bopds/book"
 )
 
 func BenchmarkGetOrCreateAuthor_Existing(b *testing.B) {
-	os.Remove("./bench_existing.db")
-	db := GetStorage("bench_existing.db")
+	dbPath := "./bench_existing.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
 	defer db.Close()
-	defer os.Remove("./bench_existing.db")
+	defer cleanupTestDB(dbPath)
 
 	author := book.Author{
 		FirstName:  "John",
@@ -36,10 +36,11 @@ func BenchmarkGetOrCreateAuthor_Existing(b *testing.B) {
 }
 
 func BenchmarkGetOrCreateAuthor_Mixed(b *testing.B) {
-	os.Remove("./bench_mixed.db")
-	db := GetStorage("bench_mixed.db")
+	dbPath := "./bench_mixed.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
 	defer db.Close()
-	defer os.Remove("./bench_mixed.db")
+	defer cleanupTestDB(dbPath)
 
 	existingAuthors := []book.Author{
 		{FirstName: "Author", MiddleName: "One", LastName: "Test"},
@@ -75,10 +76,11 @@ func BenchmarkGetOrCreateAuthor_Mixed(b *testing.B) {
 }
 
 func BenchmarkGetOrCreateAuthor_New(b *testing.B) {
-	os.Remove("./bench_new.db")
-	db := GetStorage("bench_new.db")
+	dbPath := "./bench_new.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
 	defer db.Close()
-	defer os.Remove("./bench_new.db")
+	defer cleanupTestDB(dbPath)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -3,7 +3,6 @@ package repo
 import (
 	"context"
 	"encoding/xml"
-	"os"
 	"testing"
 	"time"
 
@@ -12,11 +11,11 @@ import (
 
 func TestSearchBooks_NewFields(t *testing.T) {
 	dbPath := "./test_search.db"
-	os.Remove(dbPath)
+	cleanupTestDB(dbPath)
 	db := GetStorage(dbPath)
 	defer func() {
 		db.Close()
-		os.Remove(dbPath)
+		cleanupTestDB(dbPath)
 	}()
 
 	// Create test series
@@ -80,11 +79,11 @@ func TestSearchBooks_NewFields(t *testing.T) {
 
 func TestSearchBooks_FieldFilters(t *testing.T) {
 	dbPath := "./test_search_filters.db"
-	os.Remove(dbPath)
+	cleanupTestDB(dbPath)
 	db := GetStorage(dbPath)
 	defer func() {
 		db.Close()
-		os.Remove(dbPath)
+		cleanupTestDB(dbPath)
 	}()
 
 	// Add test books
