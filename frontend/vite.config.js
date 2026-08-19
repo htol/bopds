@@ -4,12 +4,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// URL_PREFIX: sub-path for reverse proxy deployments (no trailing slash)
-const urlPrefix = (process.env.URL_PREFIX || '').replace(/\/+$/, '')
-
+// Relative base in production builds keeps asset URLs sub-path agnostic:
+// the deployment prefix is injected at runtime by the backend.
 // https://vite.dev/config/
-export default defineConfig({
-  base: urlPrefix ? `${urlPrefix}/` : '/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? './' : '/',
 
   plugins: [
     vue(),
@@ -40,4 +39,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

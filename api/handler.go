@@ -23,7 +23,8 @@ func NewHandler(svc *service.Service, urlPrefix string) http.Handler {
 	mux.Handle("GET /opds/genres/{name}", opdsGenreBooksHandler(svc))
 
 	// Frontend and JSON API routes
-	mux.Handle("/", indexHandler())
+	mux.Handle("GET /{$}", indexHandler(urlPrefix))
+	mux.Handle("/", staticFilesHandler())
 	mux.Handle("/api/authors", withCORS(getAuthorsByLetterHandler(svc)))
 	mux.Handle("/api/authors/", withCORS(authorsAPIHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))

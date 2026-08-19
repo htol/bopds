@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,8 +17,37 @@ import (
 	"github.com/htol/bopds/service"
 )
 
-func indexHandler() http.Handler {
-	return http.FileServer(http.Dir("./frontend/dist"))
+const (
+	frontendDist         = "./frontend/dist"
+	urlPrefixPlaceholder = "__BOPDS_URL_PREFIX__"
+)
+
+func staticFilesHandler() http.Handler {
+	return http.FileServer(http.Dir(frontendDist))
+}
+
+// indexHandler serves the SPA entry point with the runtime URL prefix
+// injected, so the same image works under any sub-path.
+func indexHandler(urlPrefix string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile(filepath.Join(frontendDist, "index.html"))
+		if err != nil {
+			respondWithError(w, "failed to read index.html", err, http.StatusInternalServerError)
+			return
+		}
+
+		// JSON marshalling produces a safely quoted and escaped string literal.
+		quoted, err := json.Marshal(urlPrefix)
+		if err != nil {
+			respondWithError(w, "failed to encode URL prefix", err, http.StatusInternalServerError)
+			return
+		}
+
+		page := bytes.Replace(data, []byte(urlPrefixPlaceholder), quoted, 1)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(page)
+	})
 }
 
 func getAuthorsByLetterHandler(svc *service.Service) http.Handler {

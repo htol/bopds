@@ -1,17 +1,9 @@
 services:
   bopds:
-    image: bopds:local
     ports: !override []
 
     networks:
       - proxy
-
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: target
-      args:
-        URL_PREFIX: ${URL_PREFIX:-}
 
     environment:
       - URL_PREFIX=${URL_PREFIX:-}

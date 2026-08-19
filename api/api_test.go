@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -289,4 +291,53 @@ type testError struct {
 
 func (e *testError) Error() string {
 	return e.msg
+}
+
+func TestIndexHandler_InjectsURLPrefix(t *testing.T) {
+	dist := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dist, "frontend", "dist"), 0o755); err != nil {
+		t.Fatalf("Failed to create dist directory: %v", err)
+	}
+	page := `<html><head><script>window.__URL_PREFIX__ = __BOPDS_URL_PREFIX__</script></head></html>`
+	if err := os.WriteFile(filepath.Join(dist, "frontend", "dist", "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatalf("Failed to write test index.html: %v", err)
+	}
+	t.Chdir(dist)
+
+	tests := []struct {
+		name      string
+		urlPrefix string
+		expected  string
+	}{
+		{
+			name:      "sub-path prefix",
+			urlPrefix: "/lib",
+			expected:  `window.__URL_PREFIX__ = "/lib"`,
+		},
+		{
+			name:      "empty prefix",
+			urlPrefix: "",
+			expected:  `window.__URL_PREFIX__ = ""`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			w := httptest.NewRecorder()
+
+			indexHandler(tt.urlPrefix).ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status 200, got %d", w.Code)
+			}
+			if contentType := w.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+				t.Errorf("Expected Content-Type 'text/html; charset=utf-8', got %q", contentType)
+			}
+			body := w.Body.String()
+			if !strings.Contains(body, tt.expected) {
+				t.Errorf("Expected body to contain %q, got %q", tt.expected, body)
+			}
+		})
+	}
 }

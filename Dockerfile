@@ -39,9 +39,8 @@ WORKDIR /app
 FROM base AS frontend-builder
 
 # Copy frontend source and build
-# URL_PREFIX: sub-path for reverse proxy deployments, no trailing slash (e.g. /lib)
-ARG URL_PREFIX=/
-ENV URL_PREFIX=$URL_PREFIX
+# Note: URL_PREFIX is a runtime variable injected by the backend when serving
+# index.html, so the build is sub-path agnostic.
 COPY frontend/ ./frontend/
 RUN cd frontend && npm ci && npm run build
 
