@@ -6,7 +6,7 @@ This file guides agentic coding assistants working in the bopds repository.
 
 bopds is a Basic OPDS server that serves FB2 books. It consists of:
 
-- **Backend**: Go 1.25.5 with SQLite (CGO), net/http, structured logging
+- **Backend**: Go 1.26.6 with SQLite (CGO), net/http, structured logging
 - **Frontend**: Vue 3 + Vite + Tailwind CSS
 - **Purpose**: Serve and manage an eBook library with OPDS protocol support
 

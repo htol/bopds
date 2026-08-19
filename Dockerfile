@@ -1,7 +1,7 @@
 # ===========================================
 # BUILD ARGUMENTS (Defaults to Production)
 # ===========================================
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 ARG NODE_VERSION=22
 
 # ===========================================
@@ -67,7 +67,7 @@ RUN make backend
 # ===========================================
 FROM base AS development
 
-# Install Air for hot reload (use version compatible with Go 1.23)
+# Install Air for hot reload
 RUN make env
 
 # Set working directory

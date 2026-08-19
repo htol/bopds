@@ -1,6 +1,6 @@
 module github.com/htol/bopds
 
-go 1.25.5
+go 1.26.6
 
 require (
 	github.com/bodgit/sevenzip v1.6.1

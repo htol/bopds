@@ -7,7 +7,7 @@ services:
       target: development
       dockerfile: Dockerfile
       args:
-        GO_VERSION: 1.25
+        GO_VERSION: 1.26
         NODE_VERSION: 22
 
     ports:
