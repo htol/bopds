@@ -4,8 +4,13 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+// URL_PREFIX: sub-path for reverse proxy deployments (no trailing slash)
+const urlPrefix = (process.env.URL_PREFIX || '').replace(/\/+$/, '')
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: urlPrefix ? `${urlPrefix}/` : '/',
+
   plugins: [
     vue(),
     vueDevTools(),

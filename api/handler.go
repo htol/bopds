@@ -8,7 +8,7 @@ import (
 )
 
 // NewHandler creates and returns the main HTTP handler (router) for the application
-func NewHandler(svc *service.Service) http.Handler {
+func NewHandler(svc *service.Service, urlPrefix string) http.Handler {
 	mux := http.NewServeMux()
 
 	// OPDS Catalog routes
@@ -33,6 +33,12 @@ func NewHandler(svc *service.Service) http.Handler {
 	mux.Handle("/api/search", withCORS(searchBooksHandler(svc)))
 	mux.HandleFunc("/health", healthCheckHandler(svc))
 
+	// Apply URL prefix stripping if configured
+	var handler http.Handler = mux
+	if urlPrefix != "" {
+		handler = http.StripPrefix(urlPrefix, mux)
+	}
+
 	// Apply middleware chain
 	chain := middleware.Chain(
 		middleware.Recovery,
@@ -40,5 +46,5 @@ func NewHandler(svc *service.Service) http.Handler {
 		middleware.RequestID,
 	)
 
-	return chain(mux)
+	return chain(handler)
 }

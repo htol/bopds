@@ -10,3 +10,4 @@ bopds
 *.zip
 *.prof
 *.log
+.env

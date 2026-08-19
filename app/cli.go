@@ -172,7 +172,7 @@ func (app *appEnv) serve() {
 	// Create server
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", app.config.Server.Port),
-		Handler: api.NewHandler(app.service),
+		Handler: api.NewHandler(app.service, app.config.Server.URLPrefix),
 
 		ReadTimeout:  time.Duration(app.config.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(app.config.Server.WriteTimeout) * time.Second,

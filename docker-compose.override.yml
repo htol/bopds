@@ -1,0 +1,32 @@
+services:
+  bopds:
+    image: bopds:local
+    ports: !override []
+
+    networks:
+      - proxy
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: target
+      args:
+        URL_PREFIX: ${URL_PREFIX:-}
+
+    environment:
+      - URL_PREFIX=${URL_PREFIX:-}
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bopds.rule=Host(`${TRAEFIK_HOST}`) && PathPrefix(`${URL_PREFIX}`)"
+      - "traefik.http.routers.bopds.entrypoints=websecure"
+      - "traefik.http.routers.bopds.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.lib-slash.redirectregex.permanent=true"
+      - "traefik.http.middlewares.lib-slash.redirectregex.regex=^(https?://[^/]+${URL_PREFIX})$"
+      - "traefik.http.middlewares.lib-slash.redirectregex.replacement=$${1}/"
+      - "traefik.http.routers.bopds.middlewares=lib-slash,auth-chain@file"
+      - "traefik.http.services.bopds.loadbalancer.server.port=3001"
+
+networks:
+  proxy:
+    external: true

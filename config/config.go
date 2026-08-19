@@ -14,6 +14,7 @@ type Config struct {
 
 type ServerConfig struct {
 	Port         int
+	URLPrefix    string
 	ReadTimeout  int // seconds
 	WriteTimeout int // seconds
 	IdleTimeout  int // seconds
@@ -36,6 +37,7 @@ func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Port:         getEnvInt("PORT", 3001),
+			URLPrefix:    getEnv("URL_PREFIX", ""),
 			ReadTimeout:  getEnvInt("READ_TIMEOUT", 15),
 			WriteTimeout: getEnvInt("WRITE_TIMEOUT", 15),
 			IdleTimeout:  getEnvInt("IDLE_TIMEOUT", 60),

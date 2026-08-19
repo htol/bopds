@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+// Vite sets BASE_URL automatically from `base` config. Strip trailing slash for API prefix.
+const BASE_URL = (import.meta.env.BASE_URL || '').replace(/\/$/, '')
 
 export const fetchAPI = async (endpoint, options = {}) => {
   const res = await fetch(`${BASE_URL}${endpoint}`, options)
