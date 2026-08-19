@@ -5,7 +5,7 @@ all: build
 build: frontend backend
 
 clean:
-	rm -f books.db books.db.backup books.db-wal books.db-shm
+	rm -f bopds books.db books.db.backup books.db-wal books.db-shm
 
 frontend:
 	cd frontend; npm run build
