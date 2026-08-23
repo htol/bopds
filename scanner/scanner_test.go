@@ -179,11 +179,9 @@ func TestScanLibraryInvalidInpxReturnsError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmpDir, "bad.inpx"), []byte{127, 127}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := ScanLibrary(tmpDir, storage, 1000)
-	if err == nil {
+	if err := ScanLibrary(tmpDir, storage, 1000); err == nil {
 		t.Fatalf("didn't get error")
 	}
-
 }
 
 func BenchmarkScanLibrary(b *testing.B) {
