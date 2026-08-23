@@ -17,7 +17,8 @@ concurrency:
 jobs:
   publish-docker:
     name: Publish Docker Image
-    runs-on: ubuntu-latest
+    # Tag pushes are maintainer-only; build locally on the self-hosted runner
+    runs-on: self-hosted
     permissions:
       contents: read
       packages: write

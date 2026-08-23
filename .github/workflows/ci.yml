@@ -9,7 +9,8 @@ on:
 jobs:
   test-backend:
     name: Test Backend
-    runs-on: ubuntu-latest
+    # Own pushes/PRs run on the self-hosted runner; fork PRs stay on GitHub-hosted runners
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -26,7 +27,7 @@ jobs:
 
   build-frontend:
     name: Build Frontend
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -47,7 +48,7 @@ jobs:
 
   build-docker:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     needs: [test-backend, build-frontend]
     steps:
       - uses: actions/checkout@v7
