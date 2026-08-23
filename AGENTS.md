@@ -418,7 +418,8 @@ GET  /health                          # Health check
 2. Hot reload via Air (automatic) or rebuild with `make build`
 3. For frontend: Changes to `frontend/src/` trigger Vite hot reload
 4. Run tests: `go test ./...` to verify backend
-5. Build and test locally before committing
+5. Run `make lint` (golangci-lint) and fix findings
+6. Build and test locally before committing
 
 ## Notes
 
@@ -430,4 +431,4 @@ GET  /health                          # Health check
 - **No test framework**: Uses standard Go testing only (no testify)
 - **No frontend tests**: No test scripts defined in package.json
 - **TypeScript**: Not used (plain JavaScript for frontend)
-- **Linting**: No golangci-lint configuration present
+- **Linting**: golangci-lint v2 (standard set: errcheck, govet, ineffassign, staticcheck, unused); config in `.golangci.yml`, run via `make lint`, enforced in the `lint-backend` CI job

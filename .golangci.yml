@@ -1,0 +1,10 @@
+version: "2"
+
+# Standard set: errcheck, govet, ineffassign, staticcheck, unused
+linters:
+  default: standard
+  exclusions:
+    # std-error-handling excludes errcheck findings on the standard
+    # error-handling idioms (deferred Close, cleanup-path ignores) that this
+    # codebase uses deliberately; real unchecked errors still get flagged
+    presets: [std-error-handling]

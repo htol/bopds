@@ -1,4 +1,4 @@
-.PHONY: frontend build test init scan serve clean
+.PHONY: frontend build lint test init scan serve clean
 
 all: build
 
@@ -23,6 +23,9 @@ dev:
 	tmux new-session -d -s bopds-dev 'cd frontend && npm run dev'
 	tmux split-window -v -t bopds-dev 'air'
 	tmux attach-session -t bopds-dev
+
+lint:
+	golangci-lint run
 
 test:
 	go test -tags "sqlite_omit_load_extension,fts5" ./...

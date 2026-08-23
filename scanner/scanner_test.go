@@ -176,7 +176,9 @@ func TestScanLibraryEmptyDirNoHang(t *testing.T) {
 func TestScanLibraryInvalidInpxReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 	storage := Repo{}
-	os.WriteFile(filepath.Join(tmpDir, "bad.inpx"), []byte{127, 127}, 0o644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "bad.inpx"), []byte{127, 127}, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	err := ScanLibrary(tmpDir, storage, 1000)
 	if err == nil {
 		t.Fatalf("didn't get error")
