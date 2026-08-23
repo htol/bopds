@@ -1,0 +1,8 @@
+[tools]
+go = "1.26.6"
+golangci-lint = "2.13.1"
+
+[env]
+# Same build tags as the Makefile targets, so plain go build / go test
+# compile SQLite with FTS5 like make backend / make test do
+GOFLAGS = "-tags=sqlite_omit_load_extension,fts5"
