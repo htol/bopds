@@ -120,6 +120,9 @@ jobs:
         with:
           context: .
           push: false
+          # load: true exports the image into the runner's docker daemon
+          # so the smoke test below can run it
+          load: true
           tags: bopds:test
 
       - name: Smoke test the image
