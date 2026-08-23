@@ -1,6 +1,7 @@
 lib/*
 tmp/*
 bopds
+node_modules
 *.db
 *.db-shm
 *.db-wal

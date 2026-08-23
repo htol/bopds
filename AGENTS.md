@@ -421,6 +421,16 @@ GET  /health                          # Health check
 5. Run `make lint` (golangci-lint) and fix findings
 6. Build and test locally before committing
 
+## Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+`type(optional-scope): imperative subject in lowercase`.
+
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
+`build`, `ci`, `chore`, `revert`. Enforced by commitlint
+(`.commitlintrc.yml`, config-conventional defaults) in the `lint-commits`
+CI job on every push and pull request.
+
 ## Notes
 
 - **Database**: SQLite with CGO required; build with `CGO_ENABLED=1`

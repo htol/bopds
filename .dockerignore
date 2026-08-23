@@ -9,6 +9,7 @@ README.md
 
 # Build artifacts (keep frontend build context)
 /frontend/node_modules
+/node_modules
 /frontend/dist
 /frontend/.vite
 

@@ -45,6 +45,45 @@ jobs:
         with:
           version: v2.13.1
 
+  lint-commits:
+    name: Lint Commit Messages
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
+    steps:
+      # Full history: the commit range spans many commits
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install commitlint
+        run: npm install --no-save --no-package-lock @commitlint/cli@21.2.2 @commitlint/config-conventional@21.2.2
+
+      - name: Lint commit messages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="origin/$BASE_REF"
+            if ! git rev-parse --verify --quiet "$BASE" >/dev/null; then
+              echo "Base ref $BASE not available; skipping"
+              exit 0
+            fi
+            FROM=$(git merge-base "$BASE" HEAD)
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            FROM=$BEFORE_SHA
+          else
+            echo "No commit range to lint (new branch or rewritten history); skipping"
+            exit 0
+          fi
+          echo "Linting commits $FROM..HEAD"
+          npx --no-install commitlint --from "$FROM" --to HEAD
+
   build-frontend:
     name: Build Frontend
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
