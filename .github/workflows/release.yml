@@ -50,6 +50,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Enforce buildx cache limit (5 GB)
+        run: |
+          CACHE_DIR=/home/github-runner/.buildx-cache
+          if [ -d "$CACHE_DIR" ]; then
+            SIZE_MB=$(du -sm "$CACHE_DIR" | cut -f1)
+            if [ "$SIZE_MB" -gt 5120 ]; then
+              echo "Buildx cache is ${SIZE_MB} MB (> 5 GB), resetting it"
+              rm -rf "$CACHE_DIR"
+            fi
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
@@ -58,3 +69,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          # Persistent layer cache on the self-hosted runner (keeps the emulated
+          # arm64 production stage from rebuilding on every release)
+          cache-from: type=local,src=/home/github-runner/.buildx-cache
+          cache-to: type=local,dest=/home/github-runner/.buildx-cache,mode=max

@@ -7,7 +7,12 @@ ARG NODE_VERSION=22
 # ===========================================
 # STAGE 1: Base Build Image
 # ===========================================
-FROM golang:${GO_VERSION}-bookworm AS base
+# Build stages run natively on the build host (no QEMU); Go cross-compiles
+# for the target platform instead.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS base
+
+ARG TARGETOS
+ARG TARGETARCH
 
 # Allow Go toolchain auto-download
 ENV GOTOOLCHAIN=auto
@@ -22,7 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     p7zip-full \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && if [ "$TARGETARCH" = "arm64" ] && [ "$(uname -m)" != "aarch64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Install Node.js
 ARG NODE_VERSION
@@ -49,6 +58,9 @@ RUN cd frontend && npm ci && npm run build
 # ===========================================
 FROM base AS backend-builder
 
+ARG TARGETOS
+ARG TARGETARCH
+
 # Download Go dependencies (cached layer)
 COPY go.mod go.sum ./
 RUN go mod download
@@ -59,8 +71,12 @@ COPY . .
 # Copy frontend build from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Build the Go application with CGO enabled for SQLite support
-RUN make backend
+# Build the Go application with CGO enabled for SQLite support.
+# GOOS/GOARCH/CC make the build a native cross-compile; the Makefile only
+# adds CGO_ENABLED=1 and the build tags on top of this environment.
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=1 \
+    CC=$(if [ "$TARGETARCH" = "arm64" ] && [ "$(uname -m)" != "aarch64" ]; then printf aarch64-linux-gnu-gcc; else printf gcc; fi) \
+    make backend
 
 # ===========================================
 # STAGE 4: Development Image
