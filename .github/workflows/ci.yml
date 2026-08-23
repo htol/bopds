@@ -7,44 +7,6 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test-backend:
-    name: Test Backend
-    # Own pushes/PRs run on the self-hosted runner; fork PRs stay on GitHub-hosted runners
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.6'
-          # Self-hosted runner keeps GOMODCACHE/GOCACHE on disk between runs;
-          # the actions/cache round-trip (~200 MB per run) is pure overhead there
-          cache: false
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Run Tests
-        run: go test -v -tags "sqlite_omit_load_extension,fts5" ./...
-
-  lint-backend:
-    name: Lint Backend
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.6'
-          cache: false
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.13.1
-
   lint-commits:
     name: Lint Commit Messages
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
@@ -84,6 +46,44 @@ jobs:
           echo "Linting commits $FROM..HEAD"
           npx --no-install commitlint --from "$FROM" --to HEAD
 
+  lint-backend:
+    name: Lint Backend
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+
+  test-backend:
+    name: Test Backend
+    # Own pushes/PRs run on the self-hosted runner; fork PRs stay on GitHub-hosted runners
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.6'
+          # Self-hosted runner keeps GOMODCACHE/GOCACHE on disk between runs;
+          # the actions/cache round-trip (~200 MB per run) is pure overhead there
+          cache: false
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run Tests
+        run: go test -v -tags "sqlite_omit_load_extension,fts5" ./...
+
   build-frontend:
     name: Build Frontend
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
@@ -108,7 +108,7 @@ jobs:
   build-docker:
     name: Build Docker Image
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
-    needs: [test-backend, build-frontend]
+    needs: [lint-commits, lint-backend, test-backend, build-frontend]
     steps:
       - uses: actions/checkout@v7
 
