@@ -121,3 +121,20 @@ jobs:
           context: .
           push: false
           tags: bopds:test
+
+      - name: Smoke test the image
+        run: |
+          # The production image auto-creates its SQLite database on start,
+          # so a plain container must serve /health without extra setup
+          docker run -d --name bopds-smoke -p 127.0.0.1:8080:3001 bopds:test
+          trap 'docker rm -f bopds-smoke >/dev/null 2>&1' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health | grep -q healthy; then
+              echo "Container is healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Container did not become healthy in 30s"
+          docker logs bopds-smoke
+          exit 1
