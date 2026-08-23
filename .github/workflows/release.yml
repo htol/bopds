@@ -15,10 +15,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wait-for-ci:
+    name: Wait for CI on the tagged commit
+    # Runs on a GitHub-hosted runner: it must not occupy the single
+    # self-hosted runner while the CI jobs it waits for are queued on it
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Poll CI status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Waits for the CI workflow run on the tagged commit to finish.
+          # Fails if CI failed or never appeared (e.g. a tag pointing at a
+          # commit that was never pushed to main).
+          for i in $(seq 1 60); do
+            state=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" --jq '
+              [.workflow_runs[] | select(.name == "CI")] |
+              if length == 0 then "absent"
+              elif (map(.status != "completed") | any) then "running"
+              elif (map(.conclusion == "success") | all) then "success"
+              else "failed" end' 2>/dev/null || echo error)
+            echo "attempt $i: CI is $state"
+            case "$state" in
+              success) exit 0 ;;
+              failed) echo "CI failed on $SHA; refusing to release"; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "Timed out waiting for CI on $SHA"; exit 1
+
   publish-docker:
     name: Publish Docker Image
     # Tag pushes are maintainer-only; build locally on the self-hosted runner
     runs-on: self-hosted
+    needs: [wait-for-ci]
     permissions:
       contents: read
       packages: write
