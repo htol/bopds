@@ -1,26 +1,36 @@
 package scanner
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/htol/bopds/book"
+	"github.com/htol/bopds/logger"
 )
+
+func init() {
+	logger.Init("info")
+}
 
 func TestParseInpEntryWithAllFields(t *testing.T) {
 	s := []string{
 		"Author1,First,Middle:Author2,First,Middle:",
 		"sf:fantasy:",
 		"Test Book Title",
-		"Great Series",    // flSeries
-		"5",               // flSerNo
-		"12345",           // flFile
-		"1024000",         // flSize
-		"12345",           // flLibID
-		"1",               // flDeleted (book is present)
-		"fb2",             // flExt
-		"2024-01-15",      // flDate
-		"ru",              // flLang
-		"5",               // flLibRate
+		"Great Series",       // flSeries
+		"5",                  // flSerNo
+		"12345",              // flFile
+		"1024000",            // flSize
+		"12345",              // flLibID
+		"1",                  // flDeleted (book is present)
+		"fb2",                // flExt
+		"2024-01-15",         // flDate
+		"ru",                 // flLang
+		"5",                  // flLibRate
 		"scifi space future", // flKeyWords
-		"",                // flURI (deprecated)
+		"",                   // flURI (deprecated)
 	}
 
 	bookEntry := parseInpEntry(s)
@@ -78,8 +88,8 @@ func TestParseInpEntryEmptyOptionalFields(t *testing.T) {
 		"Author,First,Middle:",
 		"sf:",
 		"Simple Book",
-		"",   // flSeries (empty)
-		"",   // flSerNo (empty)
+		"", // flSeries (empty)
+		"", // flSerNo (empty)
 		"999",
 		"50000",
 		"999",
@@ -87,8 +97,8 @@ func TestParseInpEntryEmptyOptionalFields(t *testing.T) {
 		"fb2",
 		"2024-01-01",
 		"en",
-		"",   // flLibRate
-		"",   // flKeyWords
+		"", // flLibRate
+		"", // flKeyWords
 		"",
 	}
 
@@ -133,6 +143,45 @@ func TestParseKeywords(t *testing.T) {
 	if len(kw) != 2 || kw[0] != "scifi" || kw[1] != "space" {
 		t.Errorf("Keywords not trimmed correctly: %v", kw)
 	}
+}
+
+type Repo struct{}
+
+func (r Repo) Add(*book.Book) error {
+	return nil
+}
+
+func (r Repo) AddBatch([]*book.Book) error {
+	return nil
+}
+
+func TestScanLibraryEmptyDirNoHang(t *testing.T) {
+	baseDir := t.TempDir()
+
+	done := make(chan error)
+	storage := Repo{}
+	go func() {
+		done <- ScanLibrary(baseDir, storage, 1000)
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("error returned")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("didn't return")
+	}
+}
+
+func TestScanLibraryInvalidInpxReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	storage := Repo{}
+	os.WriteFile(filepath.Join(tmpDir, "bad.inpx"), []byte{127, 127}, 0o644)
+	err := ScanLibrary(tmpDir, storage, 1000)
+	if err == nil {
+		t.Fatalf("didn't get error")
+	}
+
 }
 
 func BenchmarkScanLibrary(b *testing.B) {

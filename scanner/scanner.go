@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/htol/bopds/book"
@@ -74,26 +73,24 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 		return err
 	}
 
-	wg := sync.WaitGroup{}
 	entries := make(chan *book.Book)
 
 	g, ctx := errgroup.WithContext(context.Background())
 
-	wg.Add(1)
 	g.Go(func() error {
-		defer wg.Done()
+		defer func() {
+			close(entries)
+		}()
 		if len(inpxs) > 0 {
 			logger.Info("Present indexes", "files", inpxs)
 			if err = checkInpxFiles(ctx, basedir, inpxs, entries); err != nil {
-				return err
+				return fmt.Errorf("scan inpx: %w", err)
 			}
 		}
 		return nil
 	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		if batchSize <= 0 {
 			batchSize = 1000
 		}
@@ -103,7 +100,7 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 			batch = append(batch, entry)
 			if len(batch) >= batchSize {
 				if err := storage.AddBatch(batch); err != nil {
-					logger.Error("failed to add batch", "error", err)
+					return fmt.Errorf("failed to add batch: %w", err)
 				}
 				// Keep capacity, reset length
 				batch = batch[:0]
@@ -111,19 +108,16 @@ func ScanLibrary(basedir string, storage Storager, batchSize int) error {
 		}
 		if len(batch) > 0 {
 			if err := storage.AddBatch(batch); err != nil {
-				logger.Error("failed to add batch", "error", err)
+				return fmt.Errorf("failed to add batch: %w", err)
 			}
 		}
-	}()
+		return nil
+	})
 
-	wg.Wait()
-
-	return nil
+	return g.Wait()
 }
 
 func checkInpxFiles(ctx context.Context, basedir string, files []string, entries chan<- *book.Book) error {
-	defer close(entries)
-
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
 		if err != nil {
@@ -153,8 +147,7 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 
 			content, err := archiveEntry.Open()
 			if err != nil {
-				logger.Error("Failed to read file in zip", "entry", archiveEntry.Name, "error", err)
-				continue
+				return fmt.Errorf("failed to read file in zip %s: %w", archiveEntry.Name, err)
 			}
 			defer content.Close()
 
@@ -177,7 +170,7 @@ func checkInpxFiles(ctx context.Context, basedir string, files []string, entries
 				}
 			}
 			if err := scanner.Err(); err != nil {
-				logger.Error("Scanner error", "entry", archiveEntry.Name, "error", err)
+				return fmt.Errorf("failed to scan %s: %w", archiveEntry.Name, err)
 			}
 			logger.Info("Finished processing archive", "file", libArchiveFile, "duration", time.Since(startTime))
 		}
