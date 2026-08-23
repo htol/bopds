@@ -15,8 +15,11 @@ bopds is a Basic OPDS server that serves FB2 books. It consists of:
 ### Backend (Go)
 
 ```bash
-# Build backend (builds frontend too)
+# Build backend only (no frontend)
 make backend
+
+# Build frontend + backend (default target)
+make build
 
 # Run all tests
 make test
@@ -28,7 +31,7 @@ go test -tags "sqlite_omit_load_extension,fts5" -run TestName ./path/to/package
 go test -tags "sqlite_omit_load_extension,fts5" -v ./path/to/package
 
 # Run server
-air
+make serve
 
 # Initialize database
 make init
@@ -77,13 +80,14 @@ air -c .air.toml
 
 #### Backend File Organization
 
-- **app/**: HTTP handlers, routing, CLI entry point
+- **app/**: CLI entry point and server wiring
+- **api/**: HTTP handlers, routing, REST and OPDS endpoints, CORS
+- **opds/**: OPDS feed generation primitives (feed, opensearch, types)
 - **repo/**: Database operations, SQLite queries, models
 - **service/**: Business logic layer between handlers and repository
 - **middleware/**: Request logging, recovery, request ID generation
 - **scanner/**: Library scanning and book parsing (FB2 format from ZIP and 7z archives)
 - **converter/**: Format conversion (FB2 → EPUB, MOBI) and archive extraction (ZIP, 7z)
-- **validator/**: Input validation
 - **book/**: Data models and types
 - **config/**: Configuration loading (environment variables)
 - **logger/**: Structured logging wrapper around slog
@@ -217,15 +221,14 @@ type Book struct {
 ```text
 frontend/src/
 ├── components/
-│   ├── base/         # Reusable UI components (BaseButton, BaseCard, etc.)
-│   ├── domain/       # Domain-specific components (BookCard, AuthorCard, etc.)
-│   ├── BooksView.vue
-│   ├── AuthorsView.vue
+│   ├── base/         # Reusable UI components (BaseButton, BaseCard, BaseBadge, BaseLoader)
+│   ├── domain/       # Domain-specific components (AuthorCard, EmptyState, UniversalBookCard)
 │   ├── GenresView.vue
-│   └── ...
+│   ├── LibraryTabs.vue
+│   ├── SearchInput.vue
+│   └── SearchView.vue
+├── assets/
 ├── api.js           # API client with fetch wrapper
-├── stores/
-│   └── libraryStore.js  # Reactive state management
 ├── main.js          # Entry point
 └── App.vue          # Root component
 ```
@@ -281,10 +284,10 @@ const handleEvent = (data) => {
 
 #### Frontend Naming Conventions
 
-- Components: PascalCase (e.g., `BookCard.vue`, `AuthorCard.vue`)
+- Components: PascalCase (e.g., `AuthorCard.vue`, `UniversalBookCard.vue`)
 - Base components: Prefix with `Base` (e.g., `BaseButton.vue`)
-- Domain components: Descriptive names (e.g., `SearchResultItem.vue`)
-- Composables/functions: camelCase (e.g., `useLibraryStore`)
+- Domain components: Descriptive names (e.g., `EmptyState.vue`)
+- Composables/functions: camelCase
 - Props/refs: camelCase
 - Emits: camelCase or kebab-case
 - CSS classes: kebab-case following Tailwind conventions
@@ -307,10 +310,9 @@ await downloadBook(bookId, 'fb2.zip')
 
 #### State Management
 
-- Use Vue's `reactive()` for global state (see `libraryStore.js`)
+- No central store; state is local to components
+- `provide`/`inject` used for shared values (e.g., search query in SearchView)
 - No external state management library (no Pinia/Vuex)
-- Export composable functions: `useLibraryStore()`
-- Keep state minimal and focused
 
 #### Styling (Tailwind CSS)
 
@@ -350,7 +352,7 @@ PORT=3001
 LOG_LEVEL=info          # debug, info, warn, error
 
 # Database
-DB_PATH=./books.db
+DB_PATH=books.db
 DB_MAX_OPEN_CONNS=25
 DB_MAX_IDLE_CONNS=25
 DB_CONN_MAX_LIFETIME=300
@@ -369,32 +371,45 @@ VITE_API_BASE_URL=    # Optional API base URL (default: same origin)
 
 ### Backend: Layered Architecture
 
-1. **app/**: HTTP handlers, routing, CLI interface
-2. **service/**: Business logic, orchestration
-3. **repo/**: Data access, database operations
-4. **middleware/**: Cross-cutting concerns (logging, recovery, CORS)
+1. **app/**: CLI entry point and server wiring
+2. **api/**: HTTP handlers, routing, REST/OPDS endpoints, CORS
+3. **service/**: Business logic, orchestration
+4. **repo/**: Data access, database operations
+5. **middleware/**: Cross-cutting concerns (logging, recovery, request ID)
 
 ### Frontend: Component-Based
 
-- Pages: `BooksView.vue`, `AuthorsView.vue`, `GenresView.vue`
-- Shared components: `LibraryTabs.vue`, `AlphabetsFilter.vue`, `Paginator.vue`
+- Pages: `GenresView.vue`, `SearchView.vue`
+- Shared components: `LibraryTabs.vue`, `SearchInput.vue`
 - Base components: `BaseButton.vue`, `BaseCard.vue`, `BaseBadge.vue`, `BaseLoader.vue`
-- Domain components: `BookCard.vue`, `AuthorCard.vue`, `SearchResultItem.vue`
+- Domain components: `AuthorCard.vue`, `UniversalBookCard.vue`, `EmptyState.vue`
 
 ### API Routes
 
 ```text
-GET  /                          # Serve frontend (SPA)
-GET  /api/authors               # Get all authors (legacy)
-GET  /api/authors?startsWith=X   # Get authors by letter
-GET  /api/authors/:id           # Get author by ID
-GET  /api/authors/:id/books     # Get books by author
-GET  /api/books                 # Get all books (legacy)
-GET  /api/books?startsWith=X     # Get books by letter
-GET  /api/books/:id/download     # Download book (format=fb2|fb2.zip|epub|mobi)
-GET  /api/genres                # Get all genres
-GET  /api/search                # Search books (q=, limit=, offset=)
-GET  /health                    # Health check
+GET  /                                # Serve frontend (SPA)
+
+# OPDS feed
+GET  /opds                            # OPDS root catalog
+GET  /opds/opensearch.xml             # OpenSearch descriptor
+GET  /opds/search                     # OPDS search
+GET  /opds/new                        # Recent books
+GET  /opds/authors                    # Authors index
+GET  /opds/authors/{id}               # Books by author
+GET  /opds/genres                     # Genres index
+GET  /opds/genres/{name}              # Books by genre
+
+# REST API
+GET  /api/authors?startsWith=X        # Authors by letter
+GET  /api/authors/{id}                # Author by ID
+GET  /api/authors/{id}/books          # Books by author
+GET  /api/books?startsWith=X          # Books by letter
+GET  /api/books/{id}/download         # Download book (format=fb2|fb2.zip|epub|mobi)
+GET  /api/genres                      # All genres
+GET  /api/languages                   # All languages
+GET  /api/search                      # Search books (q=, limit=, offset=, fields=, lang=)
+
+GET  /health                          # Health check
 ```
 
 ## Development Workflow
@@ -411,7 +426,7 @@ GET  /health                    # Health check
 - **Book format**: FB2 (FictionBook 2.0) stored in ZIP or 7z archives, converted on-demand to EPUB/MOBI
 - **Archive support**: Both `.zip` and `.7z` archives are supported for book storage
 - **Full-text search**: SQLite FTS5 virtual table for fast book search
-- **CORS**: Enabled for all origins in development (`Access-Control-Allow-Origin: *`)
+- **CORS**: API routes set `Access-Control-Allow-Origin: *` (see `api/utils.go`)
 - **No test framework**: Uses standard Go testing only (no testify)
 - **No frontend tests**: No test scripts defined in package.json
 - **TypeScript**: Not used (plain JavaScript for frontend)
