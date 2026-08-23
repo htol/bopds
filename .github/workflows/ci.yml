@@ -18,6 +18,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: '1.26.6'
+          # Self-hosted runner keeps GOMODCACHE/GOCACHE on disk between runs;
+          # the actions/cache round-trip (~200 MB per run) is pure overhead there
+          cache: false
 
       - name: Install dependencies
         run: go mod download
