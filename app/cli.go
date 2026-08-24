@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -34,13 +35,30 @@ func CLI(args []string) int {
 }
 
 type appEnv struct {
-	server      *http.Server
-	config      *config.Config
-	libraryPath string
-	cmd         string
-	storage     *repo.Repo
-	service     *service.Service
-	shutdownCtx context.Context
+	server       *http.Server
+	config       *config.Config
+	libraryRoots []string
+	scanName     string
+	cmd          string
+	storage      *repo.Repo
+	service      *service.Service
+	shutdownCtx  context.Context
+}
+
+// repeatableStrings collects repeatable flag values.
+type repeatableStrings []string
+
+func (r *repeatableStrings) String() string {
+	return strings.Join(*r, ":")
+}
+
+func (r *repeatableStrings) Set(value string) error {
+	for _, p := range strings.Split(value, ":") {
+		if p != "" {
+			*r = append(*r, p)
+		}
+	}
+	return nil
 }
 
 func (app *appEnv) fromArgs(args []string) error {
@@ -51,10 +69,10 @@ func (app *appEnv) fromArgs(args []string) error {
 
 	// CLI flags override environment variables
 	port := cfg.Server.Port
-	libPath := strings.Join(cfg.Library.Paths, ":")
+	var flagRoots repeatableStrings
 
 	fl.IntVar(&port, "p", cfg.Server.Port, "Port number")
-	fl.StringVar(&libPath, "l", libPath, "Colon-separated list of library roots")
+	fl.Var(&flagRoots, "l", "Path to library root (repeatable)")
 
 	if err := fl.Parse(args); err != nil {
 		fl.Usage()
@@ -66,7 +84,13 @@ func (app *appEnv) fromArgs(args []string) error {
 	}
 
 	app.cmd = fl.Arg(0)
-	app.libraryPath = libPath
+	if fl.NArg() > 1 {
+		app.scanName = fl.Arg(1)
+	}
+	app.libraryRoots = flagRoots
+	if len(flagRoots) == 0 {
+		app.libraryRoots = cfg.Library.Paths
+	}
 	app.config = cfg
 	app.config.Server.Port = port
 
@@ -106,14 +130,44 @@ func (app *appEnv) run() error {
 			logger.Info("Indexes dropped for performance")
 		}
 
-		var roots []string
-		for _, root := range strings.Split(app.libraryPath, ":") {
-			if root != "" {
-				roots = append(roots, root)
+		libraries, err := scanner.DiscoverLibraries(app.libraryRoots)
+		if err != nil {
+			return err
+		}
+		if app.scanName != "" {
+			found := false
+			for _, lib := range libraries {
+				if lib.Name == app.scanName {
+					libraries = []scanner.Library{lib}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("unknown library %q (use a name from LIBRARY_PATH roots: first-level subdirectories)", app.scanName)
 			}
 		}
-		if err := scanner.ScanLibraries(roots, storage, app.config.Database.BatchSize); err != nil {
-			return err
+
+		for _, lib := range libraries {
+			libID, err := storage.GetOrCreateLibrary(lib.Name, app.config.Library.Names[lib.Name])
+			if err != nil {
+				return fmt.Errorf("register library %s: %w", lib.Name, err)
+			}
+			absRoot, err := filepath.Abs(lib.Root)
+			if err != nil {
+				return fmt.Errorf("resolve library root %s: %w", lib.Root, err)
+			}
+			if err := storage.SetLibraryPath(lib.Name, absRoot); err != nil {
+				return fmt.Errorf("set library root %s: %w", lib.Name, err)
+			}
+
+			session := storage.BeginLibraryScan(libID)
+			if err := scanner.ScanLibrary(lib, storage, app.config.Database.BatchSize); err != nil {
+				return fmt.Errorf("scan library %s: %w", lib.Name, err)
+			}
+			if err := session.Finish(); err != nil {
+				return fmt.Errorf("finish scan of library %s: %w", lib.Name, err)
+			}
 		}
 
 		logger.Info("Recreating indexes...")

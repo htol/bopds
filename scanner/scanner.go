@@ -51,7 +51,15 @@ func ScanLibraries(roots []string, storage Storager, batchSize int) error {
 	if err != nil {
 		return err
 	}
+	return scanAll(libraries, storage, batchSize)
+}
 
+// ScanLibrary scans a single discovered library into storage.
+func ScanLibrary(lib Library, storage Storager, batchSize int) error {
+	return scanAll([]Library{lib}, storage, batchSize)
+}
+
+func scanAll(libraries []Library, storage Storager, batchSize int) error {
 	entries := make(chan *book.Book)
 
 	g, ctx := errgroup.WithContext(context.Background())
