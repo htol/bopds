@@ -128,9 +128,16 @@ func (r *Repo) CreateIndexes() error {
                 date_added text,
                 lib_id integer,
                 deleted boolean default 0, -- 0=present/active, 1=marked for deletion or absent
-                lib_rate integer
+                lib_rate integer,
+                library_id integer REFERENCES libraries(library_id)
             );
            CREATE INDEX IF NOT EXISTS [I_title] ON "books" ([title]);
+           -- Natural keys for rescans: upsert by (library_id, lib_id) when lib_id
+           -- is set, by (library_id, archive, filename) otherwise.
+           CREATE UNIQUE INDEX IF NOT EXISTS [uq_books_library_lib_id]
+               ON "books" ([library_id], [lib_id]) WHERE lib_id <> 0;
+           CREATE UNIQUE INDEX IF NOT EXISTS [uq_books_library_file]
+               ON "books" ([library_id], [archive], [filename]) WHERE lib_id = 0;
 
            CREATE TABLE IF NOT EXISTS "book_authors" (
                book_id INTEGER NOT NULL,

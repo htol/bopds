@@ -120,6 +120,124 @@ func TestGetOrCreateLibrary(t *testing.T) {
 	}
 }
 
+func TestAddBatch_UpsertByLibId(t *testing.T) {
+	dbPath := "./test_upsert.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("lib", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	makeBook := func(title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			Title:    title,
+			LibID:    42,
+			Archive:  "a.zip",
+			FileName: "42.fb2",
+			Lang:     "en",
+		}
+	}
+
+	if err := db.AddBatch([]*book.Book{makeBook("First Title")}); err != nil {
+		t.Fatalf("AddBatch (insert) failed: %v", err)
+	}
+
+	books, err := db.GetBooksByLetter("F")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 {
+		t.Fatalf("Expected 1 book after insert, got %d", len(books))
+	}
+	origID := books[0].BookID
+
+	// Same (library, lib_id), different title: one row, same book_id, title updated
+	if err := db.AddBatch([]*book.Book{makeBook("Second Title")}); err != nil {
+		t.Fatalf("AddBatch (upsert) failed: %v", err)
+	}
+
+	books, err = db.GetBooksByLetter("S")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 {
+		t.Fatalf("Expected 1 book after upsert, got %d", len(books))
+	}
+	if books[0].BookID != origID {
+		t.Errorf("book_id must survive the upsert: got %d, want %d", books[0].BookID, origID)
+	}
+
+	books, err = db.GetBooksByLetter("F")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter (old title) failed: %v", err)
+	}
+	if len(books) != 0 {
+		t.Errorf("Old title must be gone after update, got %d books", len(books))
+	}
+
+	var count int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM books`).Scan(&count); err != nil {
+		t.Fatalf("Count books failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 books row, got %d", count)
+	}
+}
+
+func TestAddBatch_UpsertByFilename(t *testing.T) {
+	dbPath := "./test_upsert_file.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("lib", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	// lib_id empty (0): fallback natural key is (library_id, archive, filename)
+	makeBook := func(title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			Title:    title,
+			Archive:  "a.zip",
+			FileName: "no-libid.fb2",
+			Lang:     "en",
+		}
+	}
+
+	if err := db.AddBatch([]*book.Book{makeBook("Alpha Book")}); err != nil {
+		t.Fatalf("AddBatch (insert) failed: %v", err)
+	}
+	if err := db.AddBatch([]*book.Book{makeBook("Beta Book")}); err != nil {
+		t.Fatalf("AddBatch (upsert) failed: %v", err)
+	}
+
+	var count int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM books`).Scan(&count); err != nil {
+		t.Fatalf("Count books failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("Expected 1 books row after fallback-key upsert, got %d", count)
+	}
+
+	books, err := db.GetBooksByLetter("B")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 || books[0].Title != "Beta Book" {
+		t.Errorf("Expected updated 'Beta Book', got %+v", books)
+	}
+}
+
 func TestAdd(t *testing.T) {
 	dbPath := "./test.db"
 	cleanupTestDB(dbPath)

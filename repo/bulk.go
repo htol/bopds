@@ -71,8 +71,274 @@ func (r *Repo) CheckpointWAL() error {
 	return nil
 }
 
+// cachedLibraryID returns the library ID from cache; use inside transactions
+// where SQL on another connection would deadlock on the write lock.
+func (r *Repo) cachedLibraryID(name string) (int64, error) {
+	r.mu.RLock()
+	id, ok := r.libraryCache[name]
+	r.mu.RUnlock()
+	if !ok {
+		return 0, fmt.Errorf("library %q not resolved before transaction", name)
+	}
+	return id, nil
+}
+
+// storeBooks inserts records and assigns each record its BookID.
+// Records without a Library keep the legacy plain-insert path; records with a
+// Library are upserted by their natural key so book_id survives rescans.
+func (r *Repo) storeBooks(tx *sql.Tx, records []*book.Book) error {
+	var legacy, libBooks []*book.Book
+	for _, b := range records {
+		if b.Library == "" {
+			legacy = append(legacy, b)
+		} else {
+			libBooks = append(libBooks, b)
+		}
+	}
+
+	if len(legacy) > 0 {
+		if err := r.bulkInsertBooks(tx, legacy); err != nil {
+			return err
+		}
+	}
+	if len(libBooks) > 0 {
+		return r.upsertLibraryBooks(tx, libBooks)
+	}
+	return nil
+}
+
+// upsertLibraryBooks inserts or updates library books in chunks, resolving
+// book_id by natural key: (library_id, lib_id) when lib_id is set,
+// (library_id, archive, filename) otherwise.
+func (r *Repo) upsertLibraryBooks(tx *sql.Tx, records []*book.Book) error {
+	const chunkSize = 2000 // 10 insert params per row; 2000*10 = 20000, under the SQLite limit
+	for i := 0; i < len(records); i += chunkSize {
+		end := i + chunkSize
+		if end > len(records) {
+			end = len(records)
+		}
+		chunk := records[i:end]
+
+		// Group by library (stable order), then by natural key kind
+		libOrder := make([]string, 0)
+		libGroups := make(map[string][]*book.Book)
+		for _, b := range chunk {
+			if _, ok := libGroups[b.Library]; !ok {
+				libOrder = append(libOrder, b.Library)
+			}
+			libGroups[b.Library] = append(libGroups[b.Library], b)
+		}
+
+		for _, name := range libOrder {
+			libID, err := r.cachedLibraryID(name)
+			if err != nil {
+				return err
+			}
+
+			var withLibID, byFile []*book.Book
+		for _, b := range libGroups[name] {
+				if b.LibID != 0 {
+					withLibID = append(withLibID, b)
+				} else {
+					byFile = append(byFile, b)
+				}
+			}
+
+			if err := r.upsertBookGroup(tx, libID, withLibID, `
+				ON CONFLICT (library_id, lib_id) WHERE lib_id <> 0 DO UPDATE SET
+					title = excluded.title,
+					lang = excluded.lang,
+					archive = excluded.archive,
+					filename = excluded.filename,
+					file_size = excluded.file_size,
+					date_added = excluded.date_added,
+					deleted = excluded.deleted,
+					lib_rate = excluded.lib_rate`); err != nil {
+				return err
+			}
+			if err := r.upsertBookGroup(tx, libID, byFile, `
+				ON CONFLICT (library_id, archive, filename) WHERE lib_id = 0 DO UPDATE SET
+					title = excluded.title,
+					lang = excluded.lang,
+					file_size = excluded.file_size,
+					date_added = excluded.date_added,
+					deleted = excluded.deleted,
+					lib_rate = excluded.lib_rate`); err != nil {
+				return err
+			}
+		}
+
+		if err := r.resolveLibraryBookIDs(tx, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// upsertBookGroup runs the multi-row upsert for one library and one natural-key kind.
+func (r *Repo) upsertBookGroup(tx *sql.Tx, libID int64, group []*book.Book, conflictClause string) error {
+	if len(group) == 0 {
+		return nil
+	}
+
+	valueStrings := make([]string, 0, len(group))
+	valueArgs := make([]interface{}, 0, len(group)*10)
+	for _, b := range group {
+		valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+		del := 0
+		if b.Deleted {
+			del = 1
+		}
+		valueArgs = append(valueArgs, libID, b.Title, b.Lang, b.Archive, b.FileName, b.FileSize, b.DateAdded, b.LibID, del, b.LibRate)
+	}
+
+	stmt := fmt.Sprintf(`INSERT INTO books(library_id, title, lang, archive, filename, file_size, date_added, lib_id, deleted, lib_rate)
+		VALUES %s
+		%s`, strings.Join(valueStrings, ","), conflictClause)
+
+	_, err := tx.Exec(stmt, valueArgs...)
+	return err
+}
+
+// fileKey is the map key for the (archive, filename) natural key.
+func fileKey(archive, filename string) string {
+	return archive + "\x00" + filename
+}
+
+// resolveLibraryBookIDs assigns book_id to each record by looking up its
+// natural key after the upsert. Key-based (not positional) so intra-batch
+// duplicates and conflict updates resolve correctly.
+func (r *Repo) resolveLibraryBookIDs(tx *sql.Tx, chunk []*book.Book) error {
+	type libKeys struct {
+		id       int64
+		byLibID  []*book.Book
+		byFile   []*book.Book
+	}
+
+	libOrder := make([]string, 0)
+	libs := make(map[string]*libKeys)
+	for _, b := range chunk {
+		g, ok := libs[b.Library]
+		if !ok {
+			id, err := r.cachedLibraryID(b.Library)
+			if err != nil {
+				return err
+			}
+			g = &libKeys{id: id}
+			libs[b.Library] = g
+			libOrder = append(libOrder, b.Library)
+		}
+		if b.LibID != 0 {
+			g.byLibID = append(g.byLibID, b)
+		} else {
+			g.byFile = append(g.byFile, b)
+		}
+	}
+
+	for _, name := range libOrder {
+		g := libs[name]
+
+		if len(g.byLibID) > 0 {
+			seen := make(map[int64]bool)
+			ph := make([]string, 0, len(g.byLibID))
+			args := make([]interface{}, 0, len(g.byLibID)+1)
+			args = append(args, g.id)
+			for _, b := range g.byLibID {
+				if seen[b.LibID] {
+					continue
+				}
+				seen[b.LibID] = true
+				ph = append(ph, "?")
+				args = append(args, b.LibID)
+			}
+
+			rows, err := tx.Query(fmt.Sprintf(`SELECT lib_id, book_id FROM books WHERE library_id = ? AND lib_id IN (%s)`, strings.Join(ph, ",")), args...)
+			if err != nil {
+				return err
+			}
+			idMap := make(map[int64]int64, len(g.byLibID))
+			for rows.Next() {
+				var libID, bookID int64
+				if err := rows.Scan(&libID, &bookID); err != nil {
+					rows.Close()
+					return err
+				}
+				idMap[libID] = bookID
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+
+			for _, b := range g.byLibID {
+				bookID, ok := idMap[b.LibID]
+				if !ok {
+					return fmt.Errorf("book_id not found after upsert: library %s lib_id %d", name, b.LibID)
+				}
+				b.BookID = bookID
+			}
+		}
+
+		if len(g.byFile) > 0 {
+			seen := make(map[string]bool)
+			ph := make([]string, 0, len(g.byFile))
+			args := make([]interface{}, 0, len(g.byFile)*2+1)
+			args = append(args, g.id)
+			for _, b := range g.byFile {
+				key := fileKey(b.Archive, b.FileName)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				ph = append(ph, "(?, ?)")
+				args = append(args, b.Archive, b.FileName)
+			}
+
+			rows, err := tx.Query(fmt.Sprintf(`SELECT archive, filename, book_id FROM books WHERE library_id = ? AND (archive, filename) IN (VALUES %s)`, strings.Join(ph, ",")), args...)
+			if err != nil {
+				return err
+			}
+			idMap := make(map[string]int64, len(g.byFile))
+			for rows.Next() {
+				var archive, filename string
+			var bookID int64
+				if err := rows.Scan(&archive, &filename, &bookID); err != nil {
+					rows.Close()
+					return err
+				}
+				idMap[fileKey(archive, filename)] = bookID
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+
+			for _, b := range g.byFile {
+				bookID, ok := idMap[fileKey(b.Archive, b.FileName)]
+				if !ok {
+					return fmt.Errorf("book_id not found after upsert: library %s archive %s filename %s", name, b.Archive, b.FileName)
+				}
+				b.BookID = bookID
+			}
+		}
+	}
+	return nil
+}
+
 // AddBatch adds multiple books in a single transaction
 func (r *Repo) AddBatch(records []*book.Book) error {
+	// Resolve library names before opening the transaction: the tx holds the
+	// write lock, so in-tx lookups must be pure cache reads
+	for _, b := range records {
+		if b.Library != "" {
+			if _, err := r.GetOrCreateLibrary(b.Library, ""); err != nil {
+				return err
+			}
+		}
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -85,7 +351,7 @@ func (r *Repo) AddBatch(records []*book.Book) error {
 
 	// New Bulk Strategy
 	// 1. Insert Books in chunks and get IDs
-	if err := r.bulkInsertBooks(tx, records); err != nil {
+	if err := r.storeBooks(tx, records); err != nil {
 		return err
 	}
 
