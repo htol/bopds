@@ -2,6 +2,7 @@ package repo
 
 import (
 	"encoding/xml"
+	"fmt"
 	"os"
 	"testing"
 
@@ -62,6 +63,121 @@ func TestGetOrCreateAuthor(t *testing.T) {
 	}
 	if len(authorIDs) != 1 {
 		t.Fatalf("expected 1 author ID, got %d", len(authorIDs))
+	}
+}
+
+func TestLibraryScanSession_TombstonesMissing(t *testing.T) {
+	dbPath := "./test_tombstone.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	libID, err := db.GetOrCreateLibrary("lib", "")
+	if err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	makeBook := func(libID int64, title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			LibID:    libID,
+			Title:    title,
+			Archive:  "a.zip",
+			FileName: fmt.Sprintf("%d.fb2", libID),
+			Lang:     "en",
+		}
+	}
+
+	addAll := func(ids ...int64) error {
+		books := make([]*book.Book, 0, len(ids))
+		titles := map[int64]string{1: "Aaa Book", 2: "Bbb Book", 3: "Ccc Book", 4: "Ddd Book"}
+		for _, id := range ids {
+			books = append(books, makeBook(id, titles[id]))
+		}
+		return db.AddBatch(books)
+	}
+
+	// First scan: all four books
+	s1 := db.BeginLibraryScan(libID)
+	if err := addAll(1, 2, 3, 4); err != nil {
+		t.Fatalf("AddBatch (scan 1) failed: %v", err)
+	}
+	if err := s1.Finish(); err != nil {
+		t.Fatalf("Finish (scan 1) failed: %v", err)
+	}
+
+	booksByID := func() map[int64]book.Book {
+		t.Helper()
+		books, err := db.GetBooks()
+		if err != nil {
+			t.Fatalf("GetBooks failed: %v", err)
+		}
+		result := make(map[int64]book.Book)
+		for _, row := range books {
+			var id int64
+			if _, err := fmt.Sscanf(row, "%d,", &id); err != nil {
+				t.Fatalf("Cannot parse book row %q: %v", row, err)
+			}
+			var b book.Book
+			if err := db.db.QueryRow(`SELECT book_id, lib_id FROM books WHERE book_id = ?`, id).Scan(&b.BookID, &b.LibID); err != nil {
+				t.Fatalf("Select book failed: %v", err)
+			}
+			result[b.LibID] = b
+		}
+		return result
+	}
+
+	visible := booksByID()
+	if len(visible) != 4 {
+		t.Fatalf("Expected 4 visible books after scan 1, got %d", len(visible))
+	}
+	origDID := visible[4].BookID
+
+	// Second scan: book 4 absent from the new data set
+	s2 := db.BeginLibraryScan(libID)
+	if err := addAll(1, 2, 3); err != nil {
+		t.Fatalf("AddBatch (scan 2) failed: %v", err)
+	}
+	if err := s2.Finish(); err != nil {
+		t.Fatalf("Finish (scan 2) failed: %v", err)
+	}
+
+	var deletedFlag bool
+	if err := db.db.QueryRow(`SELECT deleted FROM books WHERE book_id = ?`, origDID).Scan(&deletedFlag); err != nil {
+		t.Fatalf("Select deleted flag failed: %v", err)
+	}
+	if !deletedFlag {
+		t.Errorf("Missing book must be tombstoned (deleted=1), got %v", deletedFlag)
+	}
+	visible = booksByID()
+	if len(visible) != 3 {
+		t.Errorf("Tombstoned book must be hidden, got %d visible", len(visible))
+	}
+
+	// Third scan: book 4 returns
+	s3 := db.BeginLibraryScan(libID)
+	if err := addAll(1, 2, 3, 4); err != nil {
+		t.Fatalf("AddBatch (scan 3) failed: %v", err)
+	}
+	if err := s3.Finish(); err != nil {
+		t.Fatalf("Finish (scan 3) failed: %v", err)
+	}
+
+	visible = booksByID()
+	if len(visible) != 4 {
+		t.Fatalf("Expected 4 visible books after scan 3, got %d", len(visible))
+	}
+	if visible[4].BookID != origDID {
+		t.Errorf("Returned book must keep its book_id: got %d, want %d", visible[4].BookID, origDID)
+	}
+	if err := db.db.QueryRow(`SELECT deleted FROM books WHERE book_id = ?`, origDID).Scan(&deletedFlag); err != nil {
+		t.Fatalf("Select deleted flag (scan 3) failed: %v", err)
+	}
+	if deletedFlag {
+		t.Errorf("Returned book must be un-tombstoned, got deleted=%v", deletedFlag)
 	}
 }
 

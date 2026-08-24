@@ -172,6 +172,8 @@ func (r *Repo) upsertLibraryBooks(tx *sql.Tx, records []*book.Book) error {
 			return err
 		}
 	}
+
+	r.recordScanned(records)
 	return nil
 }
 

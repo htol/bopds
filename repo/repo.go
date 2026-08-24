@@ -17,6 +17,7 @@ type Repo struct {
 	seriesCache  map[string]int64
 	keywordCache map[string]int64
 	libraryCache map[string]int64
+	sessions     map[int64]*LibraryScanSession
 }
 
 func (r *Repo) Close() error {
