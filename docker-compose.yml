@@ -11,6 +11,7 @@ services:
       - PORT=${PORT:-3001}
       - DB_PATH=/data/books.db
       - LIBRARY_PATH=/library
+      - LIBRARY_NAMES=${LIBRARY_NAMES:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
     volumes:
