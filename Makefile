@@ -1,4 +1,4 @@
-.PHONY: frontend build lint test init scan serve clean
+.PHONY: frontend build lint test init scan scan-fixture serve clean
 
 all: build
 
@@ -34,6 +34,13 @@ init: build clean
 	./bopds init; ls -alsh books.db
 
 scan: build init
+	bash -c "time ./bopds scan"
+	ls -alsh books.db
+
+# Scan the checked-in sample libraries into books.db (see testdata/libraries/README.md)
+scan-fixture: build
+	LIBRARY_PATH="testdata/libraries/r1:testdata/libraries/r2" \
+	LIBRARY_NAMES="libA:Fiction Library,libB:Tech Library" \
 	bash -c "time ./bopds scan"
 	ls -alsh books.db
 
