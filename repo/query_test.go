@@ -9,6 +9,85 @@ import (
 	"github.com/htol/bopds/book"
 )
 
+func TestGetBooksByLetter_ExposesLibrary(t *testing.T) {
+	dbPath := "./test_library_join.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("mylib", "My Library"); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	b := &book.Book{
+		Library:  "mylib",
+		Title:    "Titled Book",
+		Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+		LibID:    7,
+		Archive:  "a.zip",
+		FileName: "7.fb2",
+		Lang:     "en",
+	}
+	if err := db.Add(b); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	books, err := db.GetBooksByLetter("T")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 {
+		t.Fatalf("Expected 1 book, got %d", len(books))
+	}
+	if books[0].Library != "mylib" {
+		t.Errorf("Library = %q, want %q", books[0].Library, "mylib")
+	}
+	if books[0].LibraryDisplayName != "My Library" {
+		t.Errorf("LibraryDisplayName = %q, want %q", books[0].LibraryDisplayName, "My Library")
+	}
+}
+
+func TestGetBooksByLetter_LibraryDisplayNameFallsBackToName(t *testing.T) {
+	dbPath := "./test_library_fallback.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("plainlib", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	b := &book.Book{
+		Library:  "plainlib",
+		Title:    "Untitled Book",
+		Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+		LibID:    9,
+		Archive:  "a.zip",
+		FileName: "9.fb2",
+		Lang:     "en",
+	}
+	if err := db.Add(b); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	books, err := db.GetBooksByLetter("U")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 {
+		t.Fatalf("Expected 1 book, got %d", len(books))
+	}
+	if books[0].LibraryDisplayName != "plainlib" {
+		t.Errorf("LibraryDisplayName = %q, want fallback %q", books[0].LibraryDisplayName, "plainlib")
+	}
+}
+
 func TestGetBooksByAuthorID_IncludesSeries(t *testing.T) {
 	dbPath := "./test_author_series.db"
 	cleanupTestDB(dbPath)

@@ -256,12 +256,14 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
 			   a.first_name, a.middle_name, a.last_name,
-			   s.series_id, s.name, bs.series_no
+			   s.series_id, s.name, bs.series_no,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE b.title LIKE ? COLLATE NOCASE AND b.deleted = 0
 		ORDER BY b.title
 	`
@@ -282,12 +284,14 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 		var seriesID sql.NullInt64
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 			&firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
+			&libraryName, &libraryDisplayName,
 		); err != nil {
 			return nil, fmt.Errorf("scan book by letter: %w", err)
 		}
@@ -296,6 +300,8 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
+		b.Library = libraryName.String
+		b.LibraryDisplayName = libraryDisplayName.String
 
 		// Helper to construct series info
 		var seriesInfo *book.SeriesInfo
@@ -361,12 +367,14 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
 			   a.first_name, a.middle_name, a.last_name,
-			   s.series_id, s.name, bs.series_no
+			   s.series_id, s.name, bs.series_no,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE ba.author_id = ? AND b.deleted = 0
 		ORDER BY b.title
 	`
@@ -387,12 +395,14 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		var seriesID sql.NullInt64
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 			&firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
+			&libraryName, &libraryDisplayName,
 		); err != nil {
 			return nil, fmt.Errorf("scan book by author id: %w", err)
 		}
@@ -401,6 +411,8 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
+		b.Library = libraryName.String
+		b.LibraryDisplayName = libraryDisplayName.String
 
 		// Helper to construct series info
 		var seriesInfo *book.SeriesInfo
@@ -504,18 +516,22 @@ func (r *Repo) GetGenres() ([]book.Genre, error) {
 func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	QUERY := `
 		SELECT book_id, title, lang, archive, filename,
-			   file_size, date_added, lib_id, deleted, lib_rate
+			   file_size, date_added, lib_id, deleted, lib_rate,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books
+		LEFT JOIN libraries l ON books.library_id = l.library_id
 		WHERE book_id = ? AND deleted = 0
 	`
 
 	var b book.Book
 	var deleted bool
 	var libRate sql.NullInt64
+	var libraryName, libraryDisplayName sql.NullString
 
 	err := r.db.QueryRow(QUERY, id).Scan(
 		&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 		&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
+		&libraryName, &libraryDisplayName,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -528,6 +544,8 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	if libRate.Valid {
 		b.LibRate = int(libRate.Int64)
 	}
+	b.Library = libraryName.String
+	b.LibraryDisplayName = libraryDisplayName.String
 
 	// Fetch related data
 	if err := r.fetchBookDetails(&b); err != nil {
@@ -550,12 +568,14 @@ func (r *Repo) GetRecentBooks(limit, offset int) ([]book.Book, int, error) {
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
 			   a.first_name, a.middle_name, a.last_name,
-			   s.series_id, s.name, bs.series_no
+			   s.series_id, s.name, bs.series_no,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE b.deleted = 0
 		ORDER BY b.date_added DESC, b.book_id DESC
 		LIMIT ? OFFSET ?
@@ -579,12 +599,14 @@ func (r *Repo) GetRecentBooks(limit, offset int) ([]book.Book, int, error) {
 		var seriesID sql.NullInt64
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 			&firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
+			&libraryName, &libraryDisplayName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan recent book: %w", err)
 		}
@@ -593,6 +615,8 @@ func (r *Repo) GetRecentBooks(limit, offset int) ([]book.Book, int, error) {
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
+		b.Library = libraryName.String
+		b.LibraryDisplayName = libraryDisplayName.String
 
 		var seriesInfo *book.SeriesInfo
 		if seriesName.Valid {
@@ -666,7 +690,8 @@ func (r *Repo) GetBooksByGenre(genre string, limit, offset int) ([]book.Book, in
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
 			   a.first_name, a.middle_name, a.last_name,
-			   s.series_id, s.name, bs.series_no
+			   s.series_id, s.name, bs.series_no,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		JOIN book_genres bg ON b.book_id = bg.book_id
 		JOIN genres g ON bg.genre_id = g.genre_id
@@ -674,6 +699,7 @@ func (r *Repo) GetBooksByGenre(genre string, limit, offset int) ([]book.Book, in
 		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE (g.display_name = ? OR g.name = ?) AND b.deleted = 0
 		ORDER BY b.title
 		LIMIT ? OFFSET ?
@@ -697,12 +723,14 @@ func (r *Repo) GetBooksByGenre(genre string, limit, offset int) ([]book.Book, in
 		var seriesID sql.NullInt64
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
 			&firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
+			&libraryName, &libraryDisplayName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan book by genre: %w", err)
 		}
@@ -711,6 +739,8 @@ func (r *Repo) GetBooksByGenre(genre string, limit, offset int) ([]book.Book, in
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
+		b.Library = libraryName.String
+		b.LibraryDisplayName = libraryDisplayName.String
 
 		var seriesInfo *book.SeriesInfo
 		if seriesName.Valid {
@@ -878,9 +908,11 @@ func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
 func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
-			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate
+			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
+			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		JOIN book_series bs ON b.book_id = bs.book_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE bs.series_id = ? AND b.deleted = 0
 		ORDER BY bs.series_no, b.title
 	`
@@ -896,10 +928,12 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 		var b book.Book
 		var deleted bool
 		var libRate sql.NullInt64
+		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
+			&libraryName, &libraryDisplayName,
 		); err != nil {
 			return nil, fmt.Errorf("scan book: %w", err)
 		}
@@ -908,6 +942,8 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 		if libRate.Valid {
 			b.LibRate = int(libRate.Int64)
 		}
+		b.Library = libraryName.String
+		b.LibraryDisplayName = libraryDisplayName.String
 
 		books = append(books, b)
 	}

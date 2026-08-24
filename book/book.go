@@ -36,6 +36,8 @@ type Book struct {
 	FileName string
 	Library  string // name of the library (subdirectory) the book belongs to
 
+	LibraryDisplayName string `json:"library_display_name,omitempty"` // human name, falls back to Library
+
 	// ===== NEW FIELDS FROM INPX =====
 	FileSize  int64       `json:"file_size,omitempty"`  // flSize
 	DateAdded string      `json:"date_added,omitempty"` // flDate (YYYY-MM-DD)
