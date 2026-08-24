@@ -123,6 +123,13 @@ func (f *Feed) AddBookEntry(b *book.Book, baseURL string) {
 		entry.Language = b.Lang
 	}
 
+	// Add source library
+	if name := b.LibraryDisplayName; name != "" {
+		entry.Source = name
+	} else if b.Library != "" {
+		entry.Source = b.Library
+	}
+
 	// Add genres as categories
 	for _, genre := range b.Genres {
 		entry.Categories = append(entry.Categories, Category{

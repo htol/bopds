@@ -84,6 +84,8 @@ type Entry struct {
 	// Dublin Core extensions
 	Language string `xml:"dc:language,omitempty"`
 	Issued   string `xml:"dc:issued,omitempty"`
+	// Source library of the entry (display name of the owning library)
+	Source string `xml:"dc:source,omitempty"`
 }
 
 // Author represents an Atom author element

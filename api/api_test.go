@@ -436,3 +436,44 @@ func TestBooksHandler_GroupsDuplicates(t *testing.T) {
 		}
 	}
 }
+
+func TestOpdsFeed_LibraryName(t *testing.T) {
+	storage := repo.GetStorage(":memory:")
+	defer func() {
+		if err := storage.Close(); err != nil {
+			t.Logf("Error closing storage: %v", err)
+		}
+	}()
+
+	if _, err := storage.GetOrCreateLibrary("libA", "Library A"); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	b := &book.Book{
+		Library:  "libA",
+		Title:    "Sourced Book",
+		Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+		LibID:    11,
+		Archive:  "a.zip",
+		FileName: "11.fb2",
+		Lang:     "en",
+	}
+	if err := storage.Add(b); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	svc := service.New(storage)
+	handler := opdsNewBooksHandler(svc)
+	req := httptest.NewRequest("GET", "/opds/new", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "<dc:source>Library A</dc:source>") {
+		t.Errorf("Expected acquisition entry to carry library name in dc:source, got:\n%s", body)
+	}
+}
