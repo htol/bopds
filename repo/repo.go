@@ -16,6 +16,7 @@ type Repo struct {
 	genreCache   map[string]int64
 	seriesCache  map[string]int64
 	keywordCache map[string]int64
+	libraryCache map[string]int64
 }
 
 func (r *Repo) Close() error {

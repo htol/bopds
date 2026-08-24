@@ -3,12 +3,39 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/htol/bopds/book"
 )
 
 // ErrNotFound is returned when a record is not found in the repository
 var ErrNotFound = errors.New("record not found")
+
+// GetOrCreateLibrary returns the ID of the library with the given name,
+// creating it if needed. A non-empty displayName is stored (and updates any
+// existing value); an empty one keeps the stored display name.
+func (r *Repo) GetOrCreateLibrary(name, displayName string) (int64, error) {
+	r.mu.RLock()
+	id, ok := r.libraryCache[name]
+	r.mu.RUnlock()
+	if ok {
+		return id, nil
+	}
+
+	err := r.db.QueryRow(`
+		INSERT INTO libraries(name, display_name) VALUES(?, NULLIF(?, ''))
+		ON CONFLICT(name) DO UPDATE SET display_name = COALESCE(excluded.display_name, libraries.display_name)
+		RETURNING library_id
+	`, name, displayName).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("get or create library %s: %w", name, err)
+	}
+
+	r.mu.Lock()
+	r.libraryCache[name] = id
+	r.mu.Unlock()
+	return id, nil
+}
 
 // Repository defines the interface for data access operations
 type Repository interface {

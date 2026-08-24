@@ -66,5 +66,23 @@ func (r *Repo) InitCache() error {
 	}
 	logger.Info("Loaded series", "count", count)
 
+	// Load Libraries
+	rows, err = r.db.Query("SELECT library_id, name FROM libraries")
+	if err != nil {
+		return fmt.Errorf("load libraries: %w", err)
+	}
+	defer rows.Close()
+	count = 0
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		r.libraryCache[name] = id
+		count++
+	}
+	logger.Info("Loaded libraries", "count", count)
+
 	return nil
 }

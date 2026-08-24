@@ -65,6 +65,61 @@ func TestGetOrCreateAuthor(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateLibrary(t *testing.T) {
+	dbPath := "./test_libraries.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+
+	id1, err := db.GetOrCreateLibrary("libA", "Library Alpha")
+	if err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	id2, err := db.GetOrCreateLibrary("libA", "Library Alpha")
+	if err != nil {
+		t.Fatalf("GetOrCreateLibrary (second call) failed: %v", err)
+	}
+	if id1 != id2 {
+		t.Errorf("Same name must return same ID: got %d and %d", id1, id2)
+	}
+
+	var count int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM libraries WHERE name = 'libA'`).Scan(&count); err != nil {
+		t.Fatalf("Count libraries failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 libraries row, got %d", count)
+	}
+
+	var displayName string
+	if err := db.db.QueryRow(`SELECT display_name FROM libraries WHERE library_id = ?`, id1).Scan(&displayName); err != nil {
+		t.Fatalf("Select display_name failed: %v", err)
+	}
+	if displayName != "Library Alpha" {
+		t.Errorf("Expected display_name 'Library Alpha', got %q", displayName)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// A fresh Repo must not erase the stored display name when given an empty one
+	db2 := GetStorage(dbPath)
+	defer func() {
+		db2.Close()
+		cleanupTestDB(dbPath)
+	}()
+	if _, err := db2.GetOrCreateLibrary("libA", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary (reopen) failed: %v", err)
+	}
+	if err := db2.db.QueryRow(`SELECT display_name FROM libraries WHERE name = 'libA'`).Scan(&displayName); err != nil {
+		t.Fatalf("Select display_name after reopen failed: %v", err)
+	}
+	if displayName != "Library Alpha" {
+		t.Errorf("Empty display name must keep stored value, got %q", displayName)
+	}
+}
+
 func TestAdd(t *testing.T) {
 	dbPath := "./test.db"
 	cleanupTestDB(dbPath)

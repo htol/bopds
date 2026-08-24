@@ -20,6 +20,7 @@ func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 		genreCache:   make(map[string]int64),
 		seriesCache:  make(map[string]int64),
 		keywordCache: make(map[string]int64),
+		libraryCache: make(map[string]int64),
 	}
 
 	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")
@@ -109,6 +110,13 @@ func (r *Repo) CreateIndexes() error {
            CREATE INDEX IF NOT EXISTS [I_first_name] ON "authors" ([first_name]);
            CREATE INDEX IF NOT EXISTS [I_last_name] ON "authors" ([last_name]);
            CREATE INDEX IF NOT EXISTS [I_middle_name] ON "authors" ([middle_name]);
+
+           CREATE TABLE IF NOT EXISTS "libraries" (
+               library_id integer primary key autoincrement not null,
+               name text unique not null,
+               display_name text,
+               path text
+           );
 
            CREATE TABLE IF NOT EXISTS "books" (
                 book_id integer primary key autoincrement not null,
