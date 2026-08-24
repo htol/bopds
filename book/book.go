@@ -34,6 +34,7 @@ type Book struct {
 	Genres   []string `xml:""`
 	Archive  string
 	FileName string
+	Library  string // name of the library (subdirectory) the book belongs to
 
 	// ===== NEW FIELDS FROM INPX =====
 	FileSize  int64       `json:"file_size,omitempty"`  // flSize

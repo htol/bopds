@@ -1,8 +1,10 @@
 package scanner
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,13 +157,121 @@ func (r Repo) AddBatch([]*book.Book) error {
 	return nil
 }
 
-func TestScanLibraryEmptyDirNoHang(t *testing.T) {
+// captureStorage records every book the scanner sends, for assertions.
+type captureStorage struct {
+	books []*book.Book
+}
+
+func (c *captureStorage) Add(b *book.Book) error {
+	c.books = append(c.books, b)
+	return nil
+}
+
+func (c *captureStorage) AddBatch(batch []*book.Book) error {
+	// The scanner reuses the batch slice; the *book.Book pointers are distinct.
+	c.books = append(c.books, batch...)
+	return nil
+}
+
+// writeZip creates a valid empty zip archive at path.
+func writeZip(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// inpLine joins .inp fields with the INPX field separator.
+func inpLine(fields ...string) string {
+	return strings.Join(fields, string(rune(4)))
+}
+
+func TestScanLibraries_LooseInp(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "foo-lib")
+	if err := os.Mkdir(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(libDir, "foo.inp"), []byte(inpLine(
+		"Ivanov,Ivan,Ivanovich:", // authors: Last,First,Middle:
+		"sf:fantasy:",             // genres, trailing list separator
+		"Test Book",
+		"", // series
+		"", // series no
+		"12345",
+		"1024000",
+		"777",
+		"0", // deleted: 0 = present
+		"fb2",
+		"2024-01-15",
+		"ru",
+		"", // lib rate
+		"", // keywords
+		"", // uri
+	)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeZip(t, filepath.Join(libDir, "foo.zip"))
+
+	storage := &captureStorage{}
+	if err := ScanLibraries([]string{root}, storage, 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(storage.books) != 1 {
+		t.Fatalf("Expected 1 book, got %d: %+v", len(storage.books), storage.books)
+	}
+	b := storage.books[0]
+
+	if b.Library != "foo-lib" {
+		t.Errorf("Library = %q, want %q", b.Library, "foo-lib")
+	}
+	if b.Archive != "foo.zip" {
+		t.Errorf("Archive = %q, want %q (relative to library root)", b.Archive, "foo.zip")
+	}
+	if b.Title != "Test Book" {
+		t.Errorf("Title = %q, want %q", b.Title, "Test Book")
+	}
+	if b.FileName != "12345.fb2" {
+		t.Errorf("FileName = %q, want %q", b.FileName, "12345.fb2")
+	}
+	if b.FileSize != 1024000 {
+		t.Errorf("FileSize = %d, want 1024000", b.FileSize)
+	}
+	if b.LibID != 777 {
+		t.Errorf("LibID = %d, want 777", b.LibID)
+	}
+	if b.Lang != "ru" {
+		t.Errorf("Lang = %q, want %q", b.Lang, "ru")
+	}
+	if b.DateAdded != "2024-01-15" {
+		t.Errorf("DateAdded = %q, want %q", b.DateAdded, "2024-01-15")
+	}
+	if b.Deleted {
+		t.Error("Deleted = true, want false")
+	}
+	if len(b.Author) != 1 || b.Author[0].LastName != "Ivanov" || b.Author[0].FirstName != "Ivan" || b.Author[0].MiddleName != "Ivanovich" {
+		t.Errorf("Author = %+v, want one Ivanov/Ivan/Ivanovich", b.Author)
+	}
+	if len(b.Genres) != 2 || b.Genres[0] != "sf" || b.Genres[1] != "fantasy" {
+		t.Errorf("Genres = %v, want [sf fantasy]", b.Genres)
+	}
+}
+
+func TestScanLibrariesEmptyDirNoHang(t *testing.T) {
 	baseDir := t.TempDir()
 
 	done := make(chan error)
 	storage := Repo{}
 	go func() {
-		done <- ScanLibrary(baseDir, storage, 1000)
+		done <- ScanLibraries([]string{baseDir}, storage, 1000)
 	}()
 	select {
 	case err := <-done:
@@ -173,13 +283,17 @@ func TestScanLibraryEmptyDirNoHang(t *testing.T) {
 	}
 }
 
-func TestScanLibraryInvalidInpxReturnsError(t *testing.T) {
+func TestScanLibrariesInvalidInpxReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
-	storage := Repo{}
-	if err := os.WriteFile(filepath.Join(tmpDir, "bad.inpx"), []byte{127, 127}, 0o644); err != nil {
+	libDir := filepath.Join(tmpDir, "lib")
+	if err := os.Mkdir(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := ScanLibrary(tmpDir, storage, 1000); err == nil {
+	storage := Repo{}
+	if err := os.WriteFile(filepath.Join(libDir, "bad.inpx"), []byte{127, 127}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ScanLibraries([]string{tmpDir}, storage, 1000); err == nil {
 		t.Fatalf("didn't get error")
 	}
 }

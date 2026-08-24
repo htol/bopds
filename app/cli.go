@@ -106,13 +106,14 @@ func (app *appEnv) run() error {
 			logger.Info("Indexes dropped for performance")
 		}
 
+		var roots []string
 		for _, root := range strings.Split(app.libraryPath, ":") {
-			if root == "" {
-				continue
+			if root != "" {
+				roots = append(roots, root)
 			}
-			if err := scanner.ScanLibrary(root, storage, app.config.Database.BatchSize); err != nil {
-				return err
-			}
+		}
+		if err := scanner.ScanLibraries(roots, storage, app.config.Database.BatchSize); err != nil {
+			return err
 		}
 
 		logger.Info("Recreating indexes...")
