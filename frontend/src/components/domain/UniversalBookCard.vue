@@ -32,8 +32,8 @@
             </span>
           </div>
 
-          <!-- Size -->
-          <div v-if="bookFileSize" class="flex items-center gap-1 w-20 shrink-0 whitespace-nowrap">
+          <!-- Size (flat results only; grouped cards show a size per copy) -->
+          <div v-if="bookFileSize && !copies" class="flex items-center gap-1 w-20 shrink-0 whitespace-nowrap">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
             </svg>
@@ -51,19 +51,45 @@
           </div>
         </div>
 
-        <!-- Download Buttons -->
-        <div class="flex flex-wrap gap-2 mt-2 justify-end">
-          <BaseButton
-            v-for="format in ['fb2', 'fb2.zip', 'epub', 'mobi']"
-            :key="format"
-            :variant="isDownloading(format) ? 'accent' : 'secondary'"
-            size="xs"
-            :loading="isDownloading(format)"
-            :disabled="hasActiveDownload && !isDownloading(format)"
-            class="min-w-[4rem] font-mono"
-            @click.stop="handleDownload(format)"
+        <!-- Download Buttons: one row per library copy for grouped books -->
+        <div v-if="copies" class="space-y-1.5 mt-2">
+          <div
+            v-for="copy in copies"
+            :key="copy.book_id"
+            class="flex flex-wrap items-center gap-2 justify-end"
           >
-            {{ isDownloading(format) ? '' : format.toUpperCase() }}
+            <BaseBadge size="sm" variant="outline">{{ copy.library_display_name || copy.library }}</BaseBadge>
+            <span v-if="formatSize(copy.file_size)" class="text-xs text-gray-500 w-20 text-right whitespace-nowrap">
+              {{ formatSize(copy.file_size) }}
+            </span>
+            <BaseButton
+              v-for="format in downloadFormats"
+              :key="format"
+              :variant="isDownloading(copy.book_id, format) ? 'accent' : 'secondary'"
+              size="xs"
+              :loading="isDownloading(copy.book_id, format)"
+              :disabled="hasActiveDownload && !isDownloading(copy.book_id, format)"
+              class="min-w-[4rem] font-mono"
+              @click.stop="handleDownload(format, copy.book_id)"
+            >
+              {{ isDownloading(copy.book_id, format) ? '' : format.toUpperCase() }}
+            </BaseButton>
+          </div>
+        </div>
+
+        <!-- Download Buttons (flat single-copy books) -->
+        <div v-else class="flex flex-wrap gap-2 mt-2 justify-end">
+          <BaseButton
+            v-for="format in downloadFormats"
+            :key="format"
+            :variant="isDownloading(bookId, format) ? 'accent' : 'secondary'"
+            size="xs"
+            :loading="isDownloading(bookId, format)"
+            :disabled="hasActiveDownload && !isDownloading(bookId, format)"
+            class="min-w-[4rem] font-mono"
+            @click.stop="handleDownload(format, bookId)"
+          >
+            {{ isDownloading(bookId, format) ? '' : format.toUpperCase() }}
           </BaseButton>
         </div>
       </div>
@@ -81,6 +107,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import BaseButton from '../base/BaseButton.vue'
+import BaseBadge from '../base/BaseBadge.vue'
 import DOMPurify from 'dompurify'
 
 const props = defineProps({
@@ -96,8 +123,18 @@ const props = defineProps({
 
 const emit = defineEmits(['download', 'click'])
 
-const currentDownloadFormat = ref(null)
+const currentDownloadFormat = ref(null) // "bookId:format" while a download is active
 const downloadProgress = ref(0)
+
+const downloadFormats = ['fb2', 'fb2.zip', 'epub', 'mobi']
+
+// Copies of this book across libraries; null for flat single-copy results
+const copies = computed(() => {
+  const list = props.book.copies
+  return Array.isArray(list) && list.length > 0 ? list : null
+})
+
+const bookId = computed(() => props.book.book_id || props.book.BookID)
 
 const cardClasses = computed(() => {
   return [
@@ -128,28 +165,32 @@ const bookSeries = computed(() => {
 
 const bookFileSize = computed(() => {
   const bytes = props.book.file_size || props.book.FileSize
+  return formatSize(bytes)
+})
+
+const formatSize = (bytes) => {
   if (!bytes) return null
-  
+
   const units = ['B', 'KB', 'MB', 'GB']
   let size = bytes
   let unitIndex = 0
-  
+
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024
     unitIndex++
   }
-  
+
   return `${size.toFixed(1)} ${units[unitIndex]}`
-})
+}
 
 const hasActiveDownload = computed(() => !!currentDownloadFormat.value)
 
-const isDownloading = (format) => currentDownloadFormat.value === format
+const isDownloading = (bookId, format) => currentDownloadFormat.value === `${bookId}:${format}`
 
-const handleDownload = async (format) => {
+const handleDownload = async (format, bookId) => {
   if (hasActiveDownload.value) return
 
-  currentDownloadFormat.value = format
+  currentDownloadFormat.value = `${bookId}:${format}`
   downloadProgress.value = 0
 
   // Simulate progress
@@ -160,7 +201,6 @@ const handleDownload = async (format) => {
   }, 200)
 
   try {
-    const bookId = props.book.book_id || props.book.BookID
     await emit('download', bookId, format)
     downloadProgress.value = 100
   } catch (error) {
@@ -207,10 +247,11 @@ const highlightedTitle = computed(() => {
 })
 
 const highlightedAuthor = computed(() => {
-  // Handle both string author (search) and array of authors (detail)
+  // Handle both string author (search) and array of authors (detail/grouped)
   let authorText = ''
-  if (Array.isArray(props.book.Author)) {
-    authorText = props.book.Author.map(a => `${a.FirstName || ''} ${a.LastName || ''}`.trim()).join(', ')
+  if (Array.isArray(props.book.Author) || Array.isArray(props.book.authors)) {
+    const list = props.book.Author || props.book.authors
+    authorText = list.map(a => `${a.FirstName || a.first_name || ''} ${a.LastName || a.last_name || ''}`.trim()).join(', ')
   } else {
     authorText = props.book.Author || props.book.author || ''
   }
