@@ -31,8 +31,9 @@ type DatabaseConfig struct {
 }
 
 type LibraryConfig struct {
-	Paths []string
-	Names map[string]string
+	Paths               []string
+	Names               map[string]string
+	MissingRowThreshold int // percent of rows a rescan may tombstone, 100 disables the guard
 }
 
 // Load creates a new Config from environment variables with defaults
@@ -54,7 +55,8 @@ func Load() *Config {
 		},
 		Library: LibraryConfig{
 			Paths: splitPaths(getEnv("LIBRARY_PATH", "./lib")),
-			Names: parseLibraryNames(getEnv("LIBRARY_NAMES", "")),
+			Names:               parseLibraryNames(getEnv("LIBRARY_NAMES", "")),
+			MissingRowThreshold: getEnvInt("LIBRARY_MISSING_THRESHOLD", 30),
 		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}

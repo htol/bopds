@@ -5,6 +5,49 @@ import (
 	"testing"
 )
 
+func TestLoad_MissingRowThreshold(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  int
+	}{
+		{
+			name:  "explicit percent",
+			value: "50",
+			set:   true,
+			want:  50,
+		},
+		{
+			name: "unset defaults to 30",
+			set:  false,
+			want: 30,
+		},
+		{
+			name:  "unparsable falls back to default",
+			value: "fifty",
+			set:   true,
+			want:  30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.set {
+				t.Setenv("LIBRARY_MISSING_THRESHOLD", tt.value)
+			} else {
+				t.Setenv("LIBRARY_MISSING_THRESHOLD", "")
+			}
+
+			cfg := Load()
+
+			if cfg.Library.MissingRowThreshold != tt.want {
+				t.Errorf("Expected MissingRowThreshold %d, got %d", tt.want, cfg.Library.MissingRowThreshold)
+			}
+		})
+	}
+}
+
 func TestLoad_LibraryNamesMap(t *testing.T) {
 	tests := []struct {
 		name  string
