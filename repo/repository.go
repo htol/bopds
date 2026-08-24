@@ -37,6 +37,24 @@ func (r *Repo) GetOrCreateLibrary(name, displayName string) (int64, error) {
 	return id, nil
 }
 
+// SetLibraryPath stores the filesystem root of a library. The root is set
+// at scan time; downloads join it with the books' library-relative archive
+// paths.
+func (r *Repo) SetLibraryPath(name, path string) error {
+	result, err := r.db.Exec(`UPDATE libraries SET path = ? WHERE name = ?`, path, name)
+	if err != nil {
+		return fmt.Errorf("set library path for %s: %w", name, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set library path for %s: %w", name, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("set library path for %s: %w", name, ErrNotFound)
+	}
+	return nil
+}
+
 // Repository defines the interface for data access operations
 type Repository interface {
 	// Close closes the database connection

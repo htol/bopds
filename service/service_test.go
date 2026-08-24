@@ -1,11 +1,17 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/htol/bopds/book"
 	"github.com/htol/bopds/logger"
+	"github.com/htol/bopds/repo"
 )
 
 func init() {
@@ -416,4 +422,75 @@ type testError struct {
 
 func (e *testError) Error() string {
 	return e.msg
+}
+
+func TestGetBookFile_RelativeArchive(t *testing.T) {
+	// Real repo + real archive fixture on disk (seam 4)
+	dbPath := filepath.Join(t.TempDir(), "download.db")
+	storage := repo.GetStorage(dbPath)
+	defer func() {
+		if err := storage.Close(); err != nil {
+			t.Errorf("Close failed: %v", err)
+		}
+	}()
+
+	// Library root fixture: sub/x.zip containing one fb2 entry
+	libDir := filepath.Join(t.TempDir(), "lib")
+	subDir := filepath.Join(libDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fb2Content := "<?xml version=\"1.0\"?><FictionBook><body>relative archive</body></FictionBook>"
+	zipPath := filepath.Join(subDir, "x.zip")
+	f, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	entry, err := zw.Create("12345.fb2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte(fb2Content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if _, err := storage.GetOrCreateLibrary("lib", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+	if err := storage.SetLibraryPath("lib", libDir); err != nil {
+		t.Fatalf("SetLibraryPath failed: %v", err)
+	}
+
+	b := &book.Book{
+		Library:  "lib",
+		LibID:    5,
+		Title:    "Relative Book",
+		Archive:  filepath.Join("sub", "x.zip"), // relative to the library root
+		FileName: "12345.fb2",
+		Lang:     "en",
+	}
+	if err := storage.Add(b); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	svc := New(storage)
+	reader, _, _, err := svc.DownloadBookFB2(context.Background(), b.BookID)
+	if err != nil {
+		t.Fatalf("DownloadBookFB2 failed: %v", err)
+	}
+	defer reader.Close()
+
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+	if !strings.Contains(string(content), "relative archive") {
+		t.Errorf("Expected FB2 content from library-relative archive, got %q", string(content))
+	}
 }

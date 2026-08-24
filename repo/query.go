@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -515,9 +516,9 @@ func (r *Repo) GetGenres() ([]book.Genre, error) {
 
 func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	QUERY := `
-		SELECT book_id, title, lang, archive, filename,
+		SELECT book_id, title, lang, books.archive, filename,
 			   file_size, date_added, lib_id, deleted, lib_rate,
-			   l.name, COALESCE(l.display_name, l.name)
+			   l.name, COALESCE(l.display_name, l.name), l.path
 		FROM books
 		LEFT JOIN libraries l ON books.library_id = l.library_id
 		WHERE book_id = ? AND deleted = 0
@@ -526,12 +527,12 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	var b book.Book
 	var deleted bool
 	var libRate sql.NullInt64
-	var libraryName, libraryDisplayName sql.NullString
+	var libraryName, libraryDisplayName, libraryPath sql.NullString
 
 	err := r.db.QueryRow(QUERY, id).Scan(
 		&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 		&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
-		&libraryName, &libraryDisplayName,
+		&libraryName, &libraryDisplayName, &libraryPath,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -546,6 +547,11 @@ func (r *Repo) GetBookByID(id int64) (*book.Book, error) {
 	}
 	b.Library = libraryName.String
 	b.LibraryDisplayName = libraryDisplayName.String
+	// Downloads open the archive: resolve the library-relative path against
+	// the library root. Legacy rows (no library) store the absolute path.
+	if libraryPath.Valid {
+		b.Archive = filepath.Join(libraryPath.String, b.Archive)
+	}
 
 	// Fetch related data
 	if err := r.fetchBookDetails(&b); err != nil {
