@@ -5,6 +5,49 @@ import (
 	"testing"
 )
 
+func TestLoad_LibraryNamesMap(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  map[string]string
+	}{
+		{
+			name:  "slug name pairs",
+			value: "foo:Foo Bar,baz:Baz",
+			set:   true,
+			want:  map[string]string{"foo": "Foo Bar", "baz": "Baz"},
+		},
+		{
+			name:  "malformed entry skipped, valid entries kept",
+			value: "nocolon,foo:Foo",
+			set:   true,
+			want:  map[string]string{"foo": "Foo"},
+		},
+		{
+			name: "unset yields no names",
+			set:  false,
+			want: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.set {
+				t.Setenv("LIBRARY_NAMES", tt.value)
+			} else {
+				t.Setenv("LIBRARY_NAMES", "")
+			}
+
+			cfg := Load()
+
+			if !reflect.DeepEqual(cfg.Library.Names, tt.want) {
+				t.Errorf("Expected Names %v, got %v", tt.want, cfg.Library.Names)
+			}
+		})
+	}
+}
+
 func TestLoad_LibraryPathList(t *testing.T) {
 	tests := []struct {
 		name  string

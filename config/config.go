@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ type DatabaseConfig struct {
 
 type LibraryConfig struct {
 	Paths []string
+	Names map[string]string
 }
 
 // Load creates a new Config from environment variables with defaults
@@ -52,6 +54,7 @@ func Load() *Config {
 		},
 		Library: LibraryConfig{
 			Paths: splitPaths(getEnv("LIBRARY_PATH", "./lib")),
+			Names: parseLibraryNames(getEnv("LIBRARY_NAMES", "")),
 		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
@@ -62,6 +65,24 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// parseLibraryNames parses "slug:Name,..." into a slug-to-display-name map.
+// Entries without a colon are skipped with a warning.
+func parseLibraryNames(value string) map[string]string {
+	names := make(map[string]string)
+	if value == "" {
+		return names
+	}
+	for _, entry := range strings.Split(value, ",") {
+		slug, name, found := strings.Cut(entry, ":")
+		if !found {
+			slog.Warn("Skipping malformed LIBRARY_NAMES entry", "entry", entry)
+			continue
+		}
+		names[slug] = name
+	}
+	return names
 }
 
 // splitPaths splits a PATH-style list on ":", dropping empty segments.
