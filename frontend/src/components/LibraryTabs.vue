@@ -23,6 +23,8 @@
 
     <!-- Content -->
     <SearchView v-if="activeTab === 'Поиск'" :initial-query="pendingSearch" />
+    <BooksView v-if="activeTab === 'Книги'" />
+    <AuthorsView v-if="activeTab === 'Авторы'" />
     <GenresView v-if="activeTab === 'Жанры'" @select-genre="handleSelectGenre" />
   </div>
 </template>
@@ -31,9 +33,11 @@
 import { ref, watch, onMounted } from 'vue'
 
 import SearchView from '@/components/SearchView.vue'
+import BooksView from '@/components/BooksView.vue'
+import AuthorsView from '@/components/AuthorsView.vue'
 import GenresView from '@/components/GenresView.vue'
 
-const tabs = ['Поиск', 'Жанры']
+const tabs = ['Поиск', 'Книги', 'Авторы', 'Жанры']
 const activeTab = ref('Поиск')
 const pendingSearch = ref('')
 
@@ -50,13 +54,20 @@ const tabClasses = (tab) => {
   }
 }
 
+// Tab name → URL hash
+const tabHashes = {
+  'Поиск': 'search',
+  'Книги': 'books',
+  'Авторы': 'authors',
+  'Жанры': 'genres'
+}
+
 // Update URL hash when switching tabs
 watch(activeTab, (newTab) => {
-  if (newTab === 'Поиск') {
-    history.replaceState({ tab: newTab }, '', '#search' + (pendingSearch.value ? `?q=${encodeURIComponent(pendingSearch.value)}` : ''))
-  } else if (newTab === 'Жанры') {
-    history.replaceState({ tab: newTab }, '', '#genres')
-  }
+  const query = newTab === 'Поиск' && pendingSearch.value
+    ? `?q=${encodeURIComponent(pendingSearch.value)}`
+    : ''
+  history.replaceState({ tab: newTab }, '', `#${tabHashes[newTab]}${query}`)
 
   // Clear pending search after tab switch is handled
   if (newTab !== 'Поиск') {
@@ -77,18 +88,17 @@ onMounted(() => {
 
   // Set initial state based on current hash
   const hash = window.location.hash
-  if (hash.includes('#genres')) {
+  if (hash.includes('#books')) {
+    activeTab.value = 'Книги'
+  } else if (hash.includes('#authors')) {
+    activeTab.value = 'Авторы'
+  } else if (hash.includes('#genres')) {
     activeTab.value = 'Жанры'
   } else {
     activeTab.value = 'Поиск'
   }
 
   // Set initial history state
-  const tabLower = activeTab.value.toLowerCase()
-  let hashStr = 'search'
-  if (tabLower === 'жанры') {
-    hashStr = 'genres'
-  }
-  history.replaceState({ tab: activeTab.value }, '', `#${hashStr}`)
+  history.replaceState({ tab: activeTab.value }, '', `#${tabHashes[activeTab.value]}`)
 })
 </script>
