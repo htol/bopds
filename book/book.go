@@ -89,4 +89,7 @@ type BookSearchResult struct {
 	Genres     []string `json:"genres,omitempty"`
 	FileSize   int64    `json:"file_size,omitempty"`
 	Deleted    bool     `json:"deleted,omitempty"`
+
+	Library            string `json:"library,omitempty"`
+	LibraryDisplayName string `json:"library_display_name,omitempty"`
 }

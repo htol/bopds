@@ -159,3 +159,48 @@ func TestSearchBooks_FieldFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchBooks_ExposesLibrary(t *testing.T) {
+	dbPath := "./test_search_lib.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("libA", "Fiction Library"); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	b := &book.Book{
+		Title:    "Advanced Calculus",
+		Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+		Library:  "libA",
+		Lang:     "en",
+		LibID:    7,
+		Archive:  "a.zip",
+		FileName: "calc.fb2",
+	}
+	if err := db.Add(b); err != nil {
+		t.Fatalf("Failed to add book: %v", err)
+	}
+	if err := db.RebuildFTSIndex(); err != nil {
+		t.Fatalf("Failed to rebuild FTS index: %v", err)
+	}
+
+	results, err := db.SearchBooks(context.Background(), "Calculus", 10, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchBooks failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+
+	if results[0].Library != "libA" {
+		t.Errorf("Library = %q, want %q", results[0].Library, "libA")
+	}
+	if results[0].LibraryDisplayName != "Fiction Library" {
+		t.Errorf("LibraryDisplayName = %q, want %q", results[0].LibraryDisplayName, "Fiction Library")
+	}
+}

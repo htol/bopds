@@ -81,7 +81,9 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 			bs.series_no,
 			fts.rank,
 			group_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,
-			group_concat(distinct g.display_name) as genres
+			group_concat(distinct g.display_name) as genres,
+			l.name as library,
+			COALESCE(l.display_name, l.name) as library_display_name
 		FROM books_fts fts
 		JOIN books b ON fts.book_id = b.book_id
 		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
@@ -90,6 +92,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		LEFT JOIN series s ON bs.series_id = s.series_id
 		LEFT JOIN book_genres bg ON b.book_id = bg.book_id
 		LEFT JOIN genres g ON bg.genre_id = g.genre_id
+		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE books_fts MATCH ? AND b.deleted = 0 `)
 
 	// Language filter condition
@@ -113,7 +116,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 	queryBuilder.WriteString(langCondition)
 
 	queryBuilder.WriteString(`
-		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank
+		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank, l.name, COALESCE(l.display_name, l.name)
 		ORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
 	`)
@@ -133,11 +136,12 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		var seriesNo sql.NullInt64
 		var genresStr sql.NullString
 		var authorStr sql.NullString
+		var libraryName, libraryDisplayName sql.NullString
 
 		err := rows.Scan(
 			&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName,
 			&r.FileSize, &r.Deleted, &seriesName, &seriesNo,
-			&r.Rank, &authorStr, &genresStr,
+			&r.Rank, &authorStr, &genresStr, &libraryName, &libraryDisplayName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)
@@ -155,6 +159,8 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		if genresStr.Valid {
 			r.Genres = strings.Split(genresStr.String, ",")
 		}
+		r.Library = libraryName.String
+		r.LibraryDisplayName = libraryDisplayName.String
 
 		results = append(results, r)
 	}
