@@ -40,6 +40,11 @@
             <span>{{ bookFileSize }}</span>
           </div>
 
+          <!-- Library (flat search results; grouped cards show a badge per copy) -->
+          <BaseBadge v-if="libraryLabel && !copies" size="sm" variant="outline">
+            {{ libraryLabel }}
+          </BaseBadge>
+
           <!-- Series -->
           <div v-if="bookSeries" class="flex items-center gap-1 text-accent-secondary">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -135,6 +140,8 @@ const copies = computed(() => {
 })
 
 const bookId = computed(() => props.book.book_id || props.book.BookID)
+
+const libraryLabel = computed(() => props.book.library_display_name || props.book.library || '')
 
 const cardClasses = computed(() => {
   return [
