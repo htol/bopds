@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,10 +51,10 @@ func (app *appEnv) fromArgs(args []string) error {
 
 	// CLI flags override environment variables
 	port := cfg.Server.Port
-	libPath := cfg.Library.Path
+	libPath := strings.Join(cfg.Library.Paths, ":")
 
 	fl.IntVar(&port, "p", cfg.Server.Port, "Port number")
-	fl.StringVar(&libPath, "l", cfg.Library.Path, "Path to library")
+	fl.StringVar(&libPath, "l", libPath, "Colon-separated list of library roots")
 
 	if err := fl.Parse(args); err != nil {
 		fl.Usage()
@@ -105,8 +106,13 @@ func (app *appEnv) run() error {
 			logger.Info("Indexes dropped for performance")
 		}
 
-		if err := scanner.ScanLibrary(app.libraryPath, storage, app.config.Database.BatchSize); err != nil {
-			return err
+		for _, root := range strings.Split(app.libraryPath, ":") {
+			if root == "" {
+				continue
+			}
+			if err := scanner.ScanLibrary(root, storage, app.config.Database.BatchSize); err != nil {
+				return err
+			}
 		}
 
 		logger.Info("Recreating indexes...")

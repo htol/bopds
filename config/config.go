@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -29,7 +30,7 @@ type DatabaseConfig struct {
 }
 
 type LibraryConfig struct {
-	Path string
+	Paths []string
 }
 
 // Load creates a new Config from environment variables with defaults
@@ -50,7 +51,7 @@ func Load() *Config {
 			BatchSize:       getEnvInt("DB_BATCH_SIZE", 1000),
 		},
 		Library: LibraryConfig{
-			Path: getEnv("LIBRARY_PATH", "./lib"),
+			Paths: splitPaths(getEnv("LIBRARY_PATH", "./lib")),
 		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
@@ -61,6 +62,17 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// splitPaths splits a PATH-style list on ":", dropping empty segments.
+func splitPaths(value string) []string {
+	var paths []string
+	for _, p := range strings.Split(value, ":") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 func getEnvInt(key string, defaultVal int) int {
