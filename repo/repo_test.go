@@ -66,6 +66,44 @@ func TestGetOrCreateAuthor(t *testing.T) {
 	}
 }
 
+func TestInitCache_KeywordsRescan(t *testing.T) {
+	dbPath := "./test_keyword_cache.db"
+	cleanupTestDB(dbPath)
+
+	makeBook := func(title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			LibID:    1,
+			Title:    title,
+			Archive:  "a.zip",
+			FileName: title + ".fb2",
+			Keywords: []string{"classic"},
+		}
+	}
+
+	// First scan inserts the keyword into an empty table
+	db := GetStorage(dbPath)
+	if err := db.AddBatch([]*book.Book{makeBook("First")}); err != nil {
+		cleanupTestDB(dbPath)
+		t.Fatalf("AddBatch (scan 1) failed: %v", err)
+	}
+	db.Close()
+
+	// A rescan in a new process has a cold cache and a populated keywords
+	// table: the existing keyword must resolve without a UNIQUE violation
+	db = GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+	if err := db.InitCache(); err != nil {
+		t.Fatalf("InitCache failed: %v", err)
+	}
+	if err := db.AddBatch([]*book.Book{makeBook("Second")}); err != nil {
+		t.Fatalf("AddBatch (scan 2) failed: %v", err)
+	}
+}
+
 func TestLibraryScanSession_TombstonesMissing(t *testing.T) {
 	dbPath := "./test_tombstone.db"
 	cleanupTestDB(dbPath)

@@ -66,6 +66,24 @@ func (r *Repo) InitCache() error {
 	}
 	logger.Info("Loaded series", "count", count)
 
+	// Load Keywords
+	rows, err = r.db.Query("SELECT keyword_id, name FROM keywords")
+	if err != nil {
+		return fmt.Errorf("load keywords: %w", err)
+	}
+	defer rows.Close()
+	count = 0
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		r.keywordCache[name] = id
+		count++
+	}
+	logger.Info("Loaded keywords", "count", count)
+
 	// Load Libraries
 	rows, err = r.db.Query("SELECT library_id, name FROM libraries")
 	if err != nil {
