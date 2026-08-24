@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -153,7 +152,7 @@ func scanLibrary(ctx context.Context, lib Library, entries chan<- *book.Book) er
 
 	if len(inpxs) > 0 {
 		logger.Info("Present indexes", "files", inpxs)
-		if err = checkInpxFiles(ctx, lib, inpxs, entries); err != nil {
+		if err = checkInpxFiles(ctx, lib, inpxs, archives, entries); err != nil {
 			return fmt.Errorf("scan inpx: %w", err)
 		}
 	}
@@ -222,7 +221,7 @@ func sendInpLines(ctx context.Context, r io.Reader, fn func(*book.Book), entries
 	return nil
 }
 
-func checkInpxFiles(ctx context.Context, lib Library, files []string, entries chan<- *book.Book) error {
+func checkInpxFiles(ctx context.Context, lib Library, files []string, archives map[string]string, entries chan<- *book.Book) error {
 	for _, file := range files {
 		arch, err := zip.OpenReader(file)
 		if err != nil {
@@ -234,19 +233,14 @@ func checkInpxFiles(ctx context.Context, lib Library, files []string, entries ch
 				continue
 			}
 
-			// don't scan inp if library archive absent
-			// Check for both .zip and .7z archives
+			// don't scan inp if companion archive is absent anywhere in the library
 			baseName := strings.TrimSuffix(archiveEntry.Name, ".inp")
-			libArchiveFile := filepath.Join(lib.Path, baseName+".zip")
-			if _, err := os.Stat(libArchiveFile); errors.Is(err, os.ErrNotExist) {
-				// Try .7z if .zip not found
-				libArchiveFile = filepath.Join(lib.Path, baseName+".7z")
-				if _, err := os.Stat(libArchiveFile); errors.Is(err, os.ErrNotExist) {
-					continue
-				}
+			archiveRel, ok := lookupArchive(archives, baseName)
+			if !ok {
+				continue
 			}
 
-			logger.Info("Processing archive", "file", libArchiveFile)
+			logger.Info("Processing archive", "library", lib.Name, "file", archiveRel)
 			startTime := time.Now()
 
 			content, err := archiveEntry.Open()
@@ -256,7 +250,7 @@ func checkInpxFiles(ctx context.Context, lib Library, files []string, entries ch
 			}
 
 			err = sendInpLines(ctx, content, func(b *book.Book) {
-				b.Archive = baseName + filepath.Ext(libArchiveFile)
+				b.Archive = archiveRel
 				b.Library = lib.Name
 			}, entries)
 			content.Close()
@@ -264,7 +258,7 @@ func checkInpxFiles(ctx context.Context, lib Library, files []string, entries ch
 				arch.Close()
 				return err
 			}
-			logger.Info("Finished processing archive", "file", libArchiveFile, "duration", time.Since(startTime))
+			logger.Info("Finished processing archive", "library", lib.Name, "file", archiveRel, "duration", time.Since(startTime))
 		}
 		arch.Close()
 	}

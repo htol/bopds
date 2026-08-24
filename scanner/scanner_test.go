@@ -265,6 +265,60 @@ func TestScanLibraries_LooseInp(t *testing.T) {
 	}
 }
 
+// writeInpx creates an .inpx archive at path containing one .inp entry with the given lines.
+func writeInpx(t *testing.T, path, inpName string, lines ...string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	entry, err := w.Create(inpName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte(strings.Join(lines, "\n") + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanLibraries_InpxNestedArchive(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "lib")
+	subDir := filepath.Join(libDir, "sub")
+	for _, dir := range []string{libDir, subDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeInpx(t, filepath.Join(libDir, "X.inpx"), "X.inp", inpLine("", "", "Nested Book"))
+	writeZip(t, filepath.Join(subDir, "X.zip"))
+
+	storage := &captureStorage{}
+	if err := ScanLibraries([]string{root}, storage, 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(storage.books) != 1 {
+		t.Fatalf("Expected 1 book, got %d: %+v", len(storage.books), storage.books)
+	}
+	b := storage.books[0]
+	if b.Title != "Nested Book" {
+		t.Errorf("Title = %q, want %q", b.Title, "Nested Book")
+	}
+	if b.Archive != filepath.Join("sub", "X.zip") {
+		t.Errorf("Archive = %q, want %q", b.Archive, filepath.Join("sub", "X.zip"))
+	}
+	if b.Library != "lib" {
+		t.Errorf("Library = %q, want %q", b.Library, "lib")
+	}
+}
+
 func TestScanLibrariesEmptyDirNoHang(t *testing.T) {
 	baseDir := t.TempDir()
 
