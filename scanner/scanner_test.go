@@ -319,6 +319,58 @@ func TestScanLibraries_InpxNestedArchive(t *testing.T) {
 	}
 }
 
+func TestScanLibraries_MixedSources(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Loose .inp with companion at the library root
+	if err := os.WriteFile(filepath.Join(libDir, "loose.inp"), []byte(inpLine("", "", "Loose Book")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeZip(t, filepath.Join(libDir, "loose.zip"))
+
+	// .inpx with its own, disjoint archive in a subdirectory
+	writeInpx(t, filepath.Join(libDir, "idx.inpx"), "idx.inp", inpLine("", "", "Indexed Book"))
+	nested := filepath.Join(libDir, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeZip(t, filepath.Join(nested, "idx.zip"))
+
+	storage := &captureStorage{}
+	if err := ScanLibraries([]string{root}, storage, 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(storage.books) != 2 {
+		t.Fatalf("Expected 2 books, got %d: %+v", len(storage.books), storage.books)
+	}
+
+	byTitle := map[string]*book.Book{}
+	for _, b := range storage.books {
+		byTitle[b.Title] = b
+	}
+
+	loose, ok := byTitle["Loose Book"]
+	if !ok {
+		t.Fatalf("Loose Book not imported: %+v", storage.books)
+	}
+	if loose.Library != "lib" || loose.Archive != "loose.zip" {
+		t.Errorf("Loose Book: Library = %q, Archive = %q; want lib, loose.zip", loose.Library, loose.Archive)
+	}
+
+	indexed, ok := byTitle["Indexed Book"]
+	if !ok {
+		t.Fatalf("Indexed Book not imported: %+v", storage.books)
+	}
+	if indexed.Library != "lib" || indexed.Archive != filepath.Join("nested", "idx.zip") {
+		t.Errorf("Indexed Book: Library = %q, Archive = %q; want lib, %s", indexed.Library, indexed.Archive, filepath.Join("nested", "idx.zip"))
+	}
+}
+
 func TestScanLibrariesEmptyDirNoHang(t *testing.T) {
 	baseDir := t.TempDir()
 
