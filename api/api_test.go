@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/htol/bopds/book"
 	"github.com/htol/bopds/logger"
 	"github.com/htol/bopds/repo"
 	"github.com/htol/bopds/service"
@@ -339,5 +341,98 @@ func TestIndexHandler_InjectsURLPrefix(t *testing.T) {
 				t.Errorf("Expected body to contain %q, got %q", tt.expected, body)
 			}
 		})
+	}
+}
+
+func TestBooksHandler_GroupsDuplicates(t *testing.T) {
+	storage := repo.GetStorage(":memory:")
+	defer func() {
+		if err := storage.Close(); err != nil {
+			t.Logf("Error closing storage: %v", err)
+		}
+	}()
+
+	if _, err := storage.GetOrCreateLibrary("libA", "Library A"); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+	if _, err := storage.GetOrCreateLibrary("libB", ""); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	author := []book.Author{{FirstName: "John", LastName: "Doe"}}
+	add := func(library, filename string, libID, size int64) {
+		b := &book.Book{
+			Library:  library,
+			Title:    "Duplicate Book",
+			Author:   author,
+			LibID:    libID,
+			Archive:  "a.zip",
+			FileName: filename,
+			FileSize: size,
+			Lang:     "en",
+		}
+		if err := storage.Add(b); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+	add("libA", "1.fb2", 1, 100)
+	add("libB", "2.fb2", 2, 200)
+
+	svc := service.New(storage)
+	handler := getBooksByLetterHandler(svc)
+	req := httptest.NewRequest("GET", "/api/books?startsWith=D", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var groups []map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&groups); err != nil {
+		t.Fatalf("Failed to decode JSON response: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("Expected 1 grouped entry, got %d", len(groups))
+	}
+
+	copies, ok := groups[0]["copies"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected 'copies' array, got %T", groups[0]["copies"])
+	}
+	if len(copies) != 2 {
+		t.Fatalf("Expected 2 copies, got %d", len(copies))
+	}
+
+	wantLibraries := map[string]struct {
+		displayName string
+		fileSize    float64
+	}{
+		"libA": {displayName: "Library A", fileSize: 100},
+		"libB": {displayName: "libB", fileSize: 200},
+	}
+
+	for _, c := range copies {
+		copyMap, ok := c.(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected copy object, got %T", c)
+		}
+		library, _ := copyMap["library"].(string)
+		want, ok := wantLibraries[library]
+		if !ok {
+			t.Errorf("Unexpected library %q in copies", library)
+			continue
+		}
+		if copyMap["library_display_name"] != want.displayName {
+			t.Errorf("Library %s: display_name = %v, want %q", library, copyMap["library_display_name"], want.displayName)
+		}
+		if copyMap["file_size"] != want.fileSize {
+			t.Errorf("Library %s: file_size = %v, want %v", library, copyMap["file_size"], want.fileSize)
+		}
+		bookID, _ := copyMap["book_id"].(float64)
+		wantURL := fmt.Sprintf("/api/books/%d/download?format=fb2", int64(bookID))
+		if copyMap["download_url"] != wantURL {
+			t.Errorf("Library %s: download_url = %v, want %q", library, copyMap["download_url"], wantURL)
+		}
 	}
 }

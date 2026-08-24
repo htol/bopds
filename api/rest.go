@@ -115,7 +115,7 @@ func getBooksByAuthorIDHandler(svc *service.Service) http.Handler {
 		}
 
 		ctx := r.Context()
-		books, err := svc.GetBooksByAuthorID(ctx, id)
+		books, err := svc.GetBooksByAuthorIDGrouped(ctx, id)
 		if err != nil {
 			respondWithError(w, "Failed to get books by author", err, http.StatusInternalServerError)
 			return
@@ -231,7 +231,7 @@ func getBooksByLetterHandler(svc *service.Service) http.Handler {
 			return
 		}
 		ctx := r.Context()
-		books, err := svc.GetBooksByLetter(ctx, letters)
+		books, err := svc.GetBooksByLetterGrouped(ctx, letters)
 		if err != nil {
 			respondWithError(w, "Failed to get books by letter", err, http.StatusInternalServerError)
 			return
