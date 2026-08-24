@@ -319,6 +319,39 @@ func TestScanLibraries_InpxNestedArchive(t *testing.T) {
 	}
 }
 
+func TestScanLibraries_InpxPrefersAdjacentArchiveOverSiblingZip(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "lib")
+	coversDir := filepath.Join(libDir, "covers")
+	for _, dir := range []string{libDir, coversDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Index at the library root. A same-named zip of cover images sits in
+	// covers/; the real book archive (.7z) lies next to the index. The
+	// scanner never opens companions during scan, so a stub .7z is enough.
+	writeInpx(t, filepath.Join(libDir, "X.inpx"), "X.inp", inpLine("", "", "Real Book"))
+	writeZip(t, filepath.Join(coversDir, "X.zip"))
+	if err := os.WriteFile(filepath.Join(libDir, "X.7z"), []byte("stub"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	storage := &captureStorage{}
+	if err := ScanLibraries([]string{root}, storage, 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(storage.books) != 1 {
+		t.Fatalf("Expected 1 book, got %d: %+v", len(storage.books), storage.books)
+	}
+	b := storage.books[0]
+	if b.Archive != "X.7z" {
+		t.Errorf("Archive = %q, want the adjacent X.7z, not covers/X.zip", b.Archive)
+	}
+}
+
 func TestScanLibraries_MixedSources(t *testing.T) {
 	root := t.TempDir()
 	libDir := filepath.Join(root, "lib")

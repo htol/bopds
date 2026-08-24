@@ -174,8 +174,17 @@ func scanLibrary(ctx context.Context, lib Library, entries chan<- *book.Book) er
 	return nil
 }
 
-// lookupArchive resolves the companion archive for baseName, preferring .zip over .7z.
-func lookupArchive(archives map[string]string, baseName string) (string, bool) {
+// lookupArchive resolves the companion archive for baseName. An archive in
+// sourceDir (the directory of the index source) wins over an archive
+// anywhere else in the library; at the same level .zip beats .7z. The
+// directory tier keeps same-named non-book archives in sibling directories
+// (e.g. cover-image zips) from shadowing the real companion archive.
+func lookupArchive(archives map[string]string, sourceDir, baseName string) (string, bool) {
+	for _, ext := range []string{".zip", ".7z"} {
+		if rel, ok := archives[baseName+ext]; ok && filepath.Dir(rel) == sourceDir {
+			return rel, true
+		}
+	}
 	for _, ext := range []string{".zip", ".7z"} {
 		if rel, ok := archives[baseName+ext]; ok {
 			return rel, true
@@ -187,7 +196,11 @@ func lookupArchive(archives map[string]string, baseName string) (string, bool) {
 // processLooseInp imports one loose .inp file; entries without a companion archive are skipped.
 func processLooseInp(ctx context.Context, lib Library, path string, archives map[string]string, entries chan<- *book.Book) error {
 	baseName := strings.TrimSuffix(filepath.Base(path), ".inp")
-	archiveRel, ok := lookupArchive(archives, baseName)
+	rel, err := filepath.Rel(lib.Path, path)
+	if err != nil {
+		return fmt.Errorf("resolve inp path %s: %w", path, err)
+	}
+	archiveRel, ok := lookupArchive(archives, filepath.Dir(rel), baseName)
 	if !ok {
 		return nil
 	}
@@ -231,6 +244,12 @@ func sendInpLines(ctx context.Context, r io.Reader, fn func(*book.Book), entries
 
 func checkInpxFiles(ctx context.Context, lib Library, files []string, archives map[string]string, entries chan<- *book.Book) error {
 	for _, file := range files {
+		inpxRel, err := filepath.Rel(lib.Path, file)
+		if err != nil {
+			return fmt.Errorf("resolve inpx path %s: %w", file, err)
+		}
+		sourceDir := filepath.Dir(inpxRel)
+
 		arch, err := zip.OpenReader(file)
 		if err != nil {
 			return fmt.Errorf("open zip %s: %w", file, err)
@@ -243,7 +262,7 @@ func checkInpxFiles(ctx context.Context, lib Library, files []string, archives m
 
 			// don't scan inp if companion archive is absent anywhere in the library
 			baseName := strings.TrimSuffix(archiveEntry.Name, ".inp")
-			archiveRel, ok := lookupArchive(archives, baseName)
+			archiveRel, ok := lookupArchive(archives, sourceDir, baseName)
 			if !ok {
 				continue
 			}
