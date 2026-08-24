@@ -181,6 +181,113 @@ func TestLibraryScanSession_TombstonesMissing(t *testing.T) {
 	}
 }
 
+func TestLibraryScanSession_ThresholdGuard(t *testing.T) {
+	// 2 books, 1 missing on rescan = 50% > default threshold 30% -> guard trips
+	dbPath := "./test_threshold.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	libID, err := db.GetOrCreateLibrary("lib", "")
+	if err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	makeBook := func(libID int64, title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			LibID:    libID,
+			Title:    title,
+			Archive:  "a.zip",
+			FileName: fmt.Sprintf("%d.fb2", libID),
+			Lang:     "en",
+		}
+	}
+
+	s1 := db.BeginLibraryScan(libID)
+	if err := db.AddBatch([]*book.Book{makeBook(1, "Aaa Book"), makeBook(2, "Bbb Book")}); err != nil {
+		t.Fatalf("AddBatch (scan 1) failed: %v", err)
+	}
+	if err := s1.Finish(); err != nil {
+		t.Fatalf("Finish (scan 1) failed: %v", err)
+	}
+
+	// Scan 2 sees only book 1: more than 30% of rows would be tombstoned
+	s2 := db.BeginLibraryScan(libID)
+	if err := db.AddBatch([]*book.Book{makeBook(1, "Aaa Book")}); err != nil {
+		t.Fatalf("AddBatch (scan 2) failed: %v", err)
+	}
+	err = s2.Finish()
+	if err == nil {
+		t.Fatal("Expected threshold guard error, got none")
+	}
+
+	// Nothing was tombstoned: both books still visible
+	books, err := db.GetBooksByLetter("B")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 1 {
+		t.Errorf("Guard must abort without tombstoning: expected 1 visible 'Bbb Book', got %d", len(books))
+	}
+}
+
+func TestLibraryScanSession_ThresholdDisabled(t *testing.T) {
+	t.Setenv("LIBRARY_MISSING_THRESHOLD", "100")
+
+	dbPath := "./test_threshold_off.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	libID, err := db.GetOrCreateLibrary("lib", "")
+	if err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	makeBook := func(libID int64, title string) *book.Book {
+		return &book.Book{
+			Library:  "lib",
+			LibID:    libID,
+			Title:    title,
+			Archive:  "a.zip",
+			FileName: fmt.Sprintf("%d.fb2", libID),
+			Lang:     "en",
+		}
+	}
+
+	s1 := db.BeginLibraryScan(libID)
+	if err := db.AddBatch([]*book.Book{makeBook(1, "Aaa Book"), makeBook(2, "Bbb Book")}); err != nil {
+		t.Fatalf("AddBatch (scan 1) failed: %v", err)
+	}
+	if err := s1.Finish(); err != nil {
+		t.Fatalf("Finish (scan 1) failed: %v", err)
+	}
+
+	// Threshold 100 disables the guard: the same flow tombstones freely
+	s2 := db.BeginLibraryScan(libID)
+	if err := db.AddBatch([]*book.Book{makeBook(1, "Aaa Book")}); err != nil {
+		t.Fatalf("AddBatch (scan 2) failed: %v", err)
+	}
+	if err := s2.Finish(); err != nil {
+		t.Fatalf("Finish with guard disabled must not fail: %v", err)
+	}
+
+	books, err := db.GetBooksByLetter("B")
+	if err != nil {
+		t.Fatalf("GetBooksByLetter failed: %v", err)
+	}
+	if len(books) != 0 {
+		t.Errorf("Expected 'Bbb Book' tombstoned with guard disabled, got %d books", len(books))
+	}
+}
+
 func TestGetOrCreateLibrary(t *testing.T) {
 	dbPath := "./test_libraries.db"
 	cleanupTestDB(dbPath)

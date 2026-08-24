@@ -15,12 +15,13 @@ func GetStorage(path string) *Repo {
 
 func GetStorageWithConfig(path string, cfg *config.Config) *Repo {
 	r := &Repo{
-		path:         path,
-		authorCache:  make(map[string]int64),
-		genreCache:   make(map[string]int64),
-		seriesCache:  make(map[string]int64),
-		keywordCache: make(map[string]int64),
-		libraryCache: make(map[string]int64),
+		path:                path,
+		authorCache:         make(map[string]int64),
+		genreCache:          make(map[string]int64),
+		seriesCache:         make(map[string]int64),
+		keywordCache:        make(map[string]int64),
+		libraryCache:        make(map[string]int64),
+		missingRowThreshold: cfg.Library.MissingRowThreshold,
 	}
 
 	db, err := sql.Open("sqlite3", "file:"+r.path+"?cache=shared&mode=rwc&_journal_mode=WAL")

@@ -122,6 +122,23 @@ func (s *LibraryScanSession) Finish() error {
 		return err
 	}
 
+	// Threshold guard: refuse to tombstone more than the configured share of
+	// a library's rows (suspects a broken or wrong .inp source).
+	threshold := s.repo.missingRowThreshold
+	if threshold < 100 {
+		var total, missing int64
+		if err = tx.QueryRow(`SELECT COUNT(*) FROM books WHERE library_id = ? AND deleted = 0`, s.libraryID).Scan(&total); err != nil {
+			return err
+		}
+		if err = tx.QueryRow(`SELECT COUNT(*) FROM books WHERE library_id = ? AND deleted = 0 AND `+notSeenPredicate, s.libraryID).Scan(&missing); err != nil {
+			return err
+		}
+		if total > 0 && missing*100 > int64(threshold)*total {
+			return fmt.Errorf("library %d: refusing to tombstone %d of %d books (threshold %d%%); check the library source",
+				s.libraryID, missing, total, threshold)
+		}
+	}
+
 	result, err := tx.Exec(`
 		UPDATE books SET deleted = 1
 		WHERE library_id = ? AND deleted = 0 AND `+notSeenPredicate, s.libraryID)
