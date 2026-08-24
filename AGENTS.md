@@ -358,7 +358,12 @@ DB_MAX_IDLE_CONNS=25
 DB_CONN_MAX_LIFETIME=300
 
 # Library
+# PATH-style list of library roots; first-level subdirectories become libraries
 LIBRARY_PATH=./lib
+# Human-readable display names, "slug:Name,..." (slug = subdirectory name)
+#LIBRARY_NAMES=mylib:My Home Library
+# Rescan guard: max percent of a library's rows a scan may tombstone; 100 disables
+LIBRARY_MISSING_THRESHOLD=30
 ```
 
 ### Frontend Environment
@@ -402,12 +407,12 @@ GET  /opds/genres/{name}              # Books by genre
 # REST API
 GET  /api/authors?startsWith=X        # Authors by letter
 GET  /api/authors/{id}                # Author by ID
-GET  /api/authors/{id}/books          # Books by author
-GET  /api/books?startsWith=X          # Books by letter
+GET  /api/authors/{id}/books          # Books by author (grouped by author+title)
+GET  /api/books?startsWith=X          # Books by letter (grouped by author+title)
 GET  /api/books/{id}/download         # Download book (format=fb2|fb2.zip|epub|mobi)
 GET  /api/genres                      # All genres
 GET  /api/languages                   # All languages
-GET  /api/search                      # Search books (q=, limit=, offset=, fields=, lang=)
+GET  /api/search                      # Search books (q=, limit=, offset=, fields=, lang=; flat per-file results with library)
 
 GET  /health                          # Health check
 ```
@@ -418,6 +423,22 @@ GET  /health                          # Health check
 2. Hot reload via Air (automatic) or rebuild with `make build`
 3. For frontend: Changes to `frontend/src/` trigger Vite hot reload
 4. Run tests: `go test ./...` to verify backend
+
+### Scanning Multiple Libraries
+
+`scan` accepts an optional library name to scan a single library; without it,
+all discovered libraries are scanned. The `-l` flag (library roots) is
+repeatable and overrides `LIBRARY_PATH`:
+
+```bash
+./bopds scan              # all libraries under all roots
+./bopds scan mylib       # one library by name
+./bopds -l /r1 -l /r2 scan
+```
+
+A checked-in sample fixture lives in `testdata/libraries/` (see its README);
+`make scan-fixture` scans it into `./books.db` for manual UI checks, and
+`TestFixture_LibrariesScan` guards it in CI.
 5. Run `make lint` (golangci-lint) and fix findings
 6. Build and test locally before committing
 

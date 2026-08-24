@@ -36,8 +36,15 @@
 
 5. **Scan Library** (After adding books to `./lib`)
 
+   `LIBRARY_PATH` defaults to `/library` in the container; first-level
+   subdirectories of each root are libraries (see README → Library Structure).
+
    ```bash
+   # All libraries
    docker-compose exec bopds /app/bopds scan
+
+   # Or a single library by name
+   docker-compose exec bopds /app/bopds scan mylib
    ```
 
 6. **Access the Application**
