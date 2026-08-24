@@ -153,12 +153,12 @@ func (app *appEnv) run() error {
 			if err != nil {
 				return fmt.Errorf("register library %s: %w", lib.Name, err)
 			}
-			absRoot, err := filepath.Abs(lib.Root)
+			absPath, err := filepath.Abs(lib.Path)
 			if err != nil {
-				return fmt.Errorf("resolve library root %s: %w", lib.Root, err)
+				return fmt.Errorf("resolve library path %s: %w", lib.Path, err)
 			}
-			if err := storage.SetLibraryPath(lib.Name, absRoot); err != nil {
-				return fmt.Errorf("set library root %s: %w", lib.Name, err)
+			if err := storage.SetLibraryPath(lib.Name, absPath); err != nil {
+				return fmt.Errorf("set library path %s: %w", lib.Name, err)
 			}
 
 			session := storage.BeginLibraryScan(libID)
