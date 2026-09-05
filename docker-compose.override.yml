@@ -10,13 +10,23 @@ services:
 
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.bopds.rule=Host(`${TRAEFIK_HOST}`) && PathPrefix(`${URL_PREFIX}`)"
-      - "traefik.http.routers.bopds.entrypoints=websecure"
-      - "traefik.http.routers.bopds.tls.certresolver=letsencrypt"
       - "traefik.http.middlewares.lib-slash.redirectregex.permanent=true"
       - "traefik.http.middlewares.lib-slash.redirectregex.regex=^(https?://[^/]+${URL_PREFIX})$"
       - "traefik.http.middlewares.lib-slash.redirectregex.replacement=$${1}/"
+
+      - "traefik.http.routers.bopds-bypass.rule=Host(`${TRAEFIK_HOST}`) && !ClientIP(`${BYPASS_EXCLUDE:-0.0.0.0/32}`) && ClientIP(`${BYPASS_CIDR:-0.0.0.0/32}`)"
+      - "traefik.http.routers.bopds-bypass.priority=100"
+      - "traefik.http.routers.bopds-bypass.entrypoints=websecure"
+      - "traefik.http.routers.bopds-bypass.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.bopds-bypass.middlewares=lib-slash"
+      - "traefik.http.routers.bopds-bypass.service=bopds"
+
+      - "traefik.http.routers.bopds.rule=Host(`${TRAEFIK_HOST}`) && PathPrefix(`${URL_PREFIX}`)"
+      - "traefik.http.routers.bopds.priority=10"
+      - "traefik.http.routers.bopds.entrypoints=websecure"
+      - "traefik.http.routers.bopds.tls.certresolver=letsencrypt"
       - "traefik.http.routers.bopds.middlewares=lib-slash,auth-chain@file"
+      - "traefik.http.routers.bopds.service=bopds"
       - "traefik.http.services.bopds.loadbalancer.server.port=3001"
 
 networks:
