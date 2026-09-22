@@ -14,7 +14,7 @@ services:
       - "traefik.http.middlewares.lib-slash.redirectregex.regex=^(https?://[^/]+${URL_PREFIX})$"
       - "traefik.http.middlewares.lib-slash.redirectregex.replacement=$${1}/"
 
-      - "traefik.http.routers.bopds-bypass.rule=Host(`${TRAEFIK_HOST}`) && !ClientIP(`${BYPASS_EXCLUDE:-0.0.0.0/32}`) && ClientIP(`${BYPASS_CIDR:-0.0.0.0/32}`)"
+      - "traefik.http.routers.bopds-bypass.rule=Host(`${TRAEFIK_HOST}`) && PathPrefix(`${URL_PREFIX}`) && !ClientIP(`${BYPASS_EXCLUDE:-0.0.0.0/32}`) && ClientIP(`${BYPASS_CIDR:-0.0.0.0/32}`)"
       - "traefik.http.routers.bopds-bypass.priority=100"
       - "traefik.http.routers.bopds-bypass.entrypoints=websecure"
       - "traefik.http.routers.bopds-bypass.tls.certresolver=letsencrypt"
