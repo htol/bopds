@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -221,6 +222,32 @@ func authorsAPIHandler(svc *service.Service) http.Handler {
 		}
 	}
 	return http.HandlerFunc(hf)
+}
+
+func getBooksBySeriesHandler(svc *service.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			respondWithValidationError(w, "invalid series ID")
+			return
+		}
+
+		ctx := r.Context()
+		books, err := svc.GetBooksBySeriesIDGrouped(ctx, id)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				respondWithError(w, "series not found", err, http.StatusNotFound)
+			} else {
+				respondWithError(w, "Failed to get books by series", err, http.StatusInternalServerError)
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(books); err != nil {
+			logger.Error("Failed to encode books by series response", "error", err)
+		}
+	})
 }
 
 func getBooksByLetterHandler(svc *service.Service) http.Handler {

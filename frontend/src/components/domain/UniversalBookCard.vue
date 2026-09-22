@@ -18,9 +18,21 @@
           <span v-html="highlightedTitle"></span>
         </h3>
 
-        <!-- Author -->
+        <!-- Author: one link per author when IDs are available -->
         <p class="text-sm text-gray-600 mb-1 truncate">
-          <span v-html="highlightedAuthor"></span>
+          <template v-if="authorLinks && authorLinks.length">
+            <template v-for="(author, i) in authorLinks" :key="author.id">
+              <span v-if="i > 0">,&nbsp;</span>
+              <a
+                href="#"
+                class="hover:text-accent-primary hover:underline"
+                @click.stop.prevent="handleAuthorClick(author)"
+              >
+                <span v-html="highlightMatches(author.name, searchQuery)"></span>
+              </a>
+            </template>
+          </template>
+          <span v-else v-html="highlightedAuthor"></span>
         </p>
 
         <!-- Meta Info Row -->
@@ -50,7 +62,15 @@
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <span class="font-medium bg-accent-secondary/10 px-1.5 py-0.5 rounded">
+            <a
+              v-if="seriesId"
+              href="#"
+              class="font-medium bg-accent-secondary/10 px-1.5 py-0.5 rounded hover:bg-accent-secondary/25 hover:underline"
+              @click.stop.prevent="handleSeriesClick"
+            >
+              {{ bookSeries }}
+            </a>
+            <span v-else class="font-medium bg-accent-secondary/10 px-1.5 py-0.5 rounded">
               {{ bookSeries }}
             </span>
           </div>
@@ -126,7 +146,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['download', 'click'])
+const emit = defineEmits(['download', 'click', 'author-click', 'series-click'])
 
 const currentDownloadFormat = ref(null) // "bookId:format" while a download is active
 const downloadProgress = ref(0)
@@ -158,17 +178,59 @@ const bookSeries = computed(() => {
   // Search uses: series_name, series_no
   // Book detail (JSON) uses: series.name, series.series_no
   // Book detail (Go struct access) uses: Series.Name, Series.SeriesNo
-  const name = props.book.series_name || 
-               props.book.Series?.Name || 
+  const name = props.book.series_name ||
+               props.book.Series?.Name ||
                props.book.series?.name
-               
-  const no = props.book.series_no || 
-             props.book.Series?.SeriesNo || 
+
+  const no = props.book.series_no ||
+             props.book.Series?.SeriesNo ||
              props.book.series?.series_no
-  
+
   if (!name) return null
   return no ? `${name} #${no}` : name
 })
+
+// Series ID for navigation: flat results carry series_id, grouped ones series.series_id
+const seriesId = computed(() =>
+  props.book.series_id || props.book.Series?.ID || props.book.series?.series_id || 0
+)
+
+// One entry per displayed author ({ id, name }); null when IDs are not
+// available and the line must render as plain text
+const authorLinks = computed(() => {
+  // Flat search result: author is a concatenated string, author_ids aligns
+  // with its segments by index (names are joined with ",")
+  const authorStr = props.book.author
+  if (typeof authorStr === 'string' && authorStr) {
+    const ids = props.book.author_ids
+    if (!Array.isArray(ids) || ids.length === 0) return null
+    const names = authorStr.split(',').map(s => s.trim()).filter(Boolean)
+    if (names.length !== ids.length) return null
+    return names.map((name, i) => ({ id: ids[i], name }))
+  }
+  // Grouped/detail cards: authors array entries carry IDs (JSON key "ID")
+  const list = props.book.authors || props.book.Author
+  if (Array.isArray(list) && list.length > 0) {
+    const links = list.map(a => ({
+      id: a.ID ?? a.id,
+      name: `${a.FirstName || a.first_name || ''} ${a.LastName || a.last_name || ''}`.trim()
+    }))
+    return links.every(l => l.id) ? links : null
+  }
+  return null
+})
+
+const handleAuthorClick = (author) => {
+  emit('author-click', author)
+}
+
+const handleSeriesClick = () => {
+  // Name without the "#no" suffix
+  const name = props.book.series_name ||
+               props.book.Series?.Name ||
+               props.book.series?.name || ''
+  emit('series-click', { id: seriesId.value, name })
+}
 
 const bookFileSize = computed(() => {
   const bytes = props.book.file_size || props.book.FileSize

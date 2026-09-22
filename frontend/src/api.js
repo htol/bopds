@@ -50,6 +50,7 @@ export const api = {
   getBooks: (letter) => fetchAPI(`/api/books?startsWith=${letter}`),
   getBooksByAuthor: (authorId) => fetchAPI(`/api/authors/${authorId}/books`),
   getAuthorById: (authorId) => fetchAPI(`/api/authors/${authorId}`),
+  getBooksBySeries: (seriesId) => fetchAPI(`/api/series/${seriesId}/books`),
   getLanguages: () => fetchAPI('/api/languages'),
   searchBooks: (query, limit = 20, offset = 0, fields = [], languages = []) => {
     let url = `/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`

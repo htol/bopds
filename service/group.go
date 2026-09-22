@@ -97,3 +97,24 @@ func (s *Service) GetBooksByAuthorIDGrouped(ctx context.Context, id int64) ([]Bo
 	}
 	return groupBooks(books), nil
 }
+
+// GetBooksBySeriesID lists the books of a series ordered by series number.
+func (s *Service) GetBooksBySeriesID(ctx context.Context, id int64) ([]book.Book, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid series ID: %d", id)
+	}
+	books, err := s.repo.GetBooksBySeriesID(id)
+	if err != nil {
+		return nil, fmt.Errorf("get books by series ID %d: %w", id, err)
+	}
+	return books, nil
+}
+
+// GetBooksBySeriesIDGrouped lists a series' books with duplicates grouped.
+func (s *Service) GetBooksBySeriesIDGrouped(ctx context.Context, id int64) ([]BookGroup, error) {
+	books, err := s.GetBooksBySeriesID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return groupBooks(books), nil
+}

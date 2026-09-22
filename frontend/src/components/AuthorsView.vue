@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 max-w-5xl mx-auto">
     <!-- Author Detail -->
-    <template v-if="selectedAuthor">
+    <template v-if="selectedAuthor || isLoadingBooks">
       <!-- Back Button -->
       <div class="mb-4">
         <BaseButton variant="ghost" size="sm" @click="goBack">
@@ -13,7 +13,7 @@
       <header class="mb-6 border-b border-gray-200 pb-4">
         <div class="flex justify-between items-start gap-4">
           <h1 class="text-2xl font-display font-semibold text-gray-900">
-            {{ fullName(selectedAuthor) }}
+            {{ selectedAuthor ? fullName(selectedAuthor) : '…' }}
           </h1>
           <BaseBadge
             v-if="selectedAuthor.BookCount !== undefined"
@@ -37,6 +37,8 @@
           :key="index"
           :book="group"
           @download="handleDownload"
+          @author-click="emit('author-click', $event)"
+          @series-click="emit('series-click', $event)"
         />
       </div>
 
@@ -114,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import AuthorCard from '@/components/domain/AuthorCard.vue'
 import UniversalBookCard from '@/components/domain/UniversalBookCard.vue'
 import EmptyState from '@/components/domain/EmptyState.vue'
@@ -122,6 +124,16 @@ import BaseBadge from '@/components/base/BaseBadge.vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
 import { api, downloadBook } from '@/api'
+
+const props = defineProps({
+  // Open this author's detail directly (author-click navigation from a card)
+  initialAuthorId: {
+    type: Number,
+    default: null
+  }
+})
+
+const emit = defineEmits(['author-click', 'series-click'])
 
 // Same alphabet as the OPDS authors index (api/opds.go)
 const letters = Array.from('АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯABCDEFGHIJKLMNOPQRSTUVWXYZ')
@@ -175,6 +187,38 @@ const selectAuthor = async (author) => {
     isLoadingBooks.value = false
   }
 }
+
+// Enter detail mode from an author-click navigation (ID only, no book count)
+const openAuthorById = async (id) => {
+  isLoadingBooks.value = true
+
+  try {
+    const [detail, books] = await Promise.all([
+      api.getAuthorById(id),
+      api.getBooksByAuthor(id)
+    ])
+    selectedAuthor.value = detail
+    authorBooks.value = books
+  } catch (err) {
+    console.error('Failed to load author books:', err)
+    selectedAuthor.value = null
+    authorBooks.value = []
+  } finally {
+    isLoadingBooks.value = false
+  }
+}
+
+onMounted(() => {
+  if (props.initialAuthorId) {
+    openAuthorById(props.initialAuthorId)
+  }
+})
+
+watch(() => props.initialAuthorId, (id) => {
+  if (id) {
+    openAuthorById(id)
+  }
+})
 
 const goBack = () => {
   resetDetail()

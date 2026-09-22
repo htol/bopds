@@ -74,6 +74,7 @@ type Repository interface {
 	GetBooks() ([]string, error)
 	GetBooksByLetter(letters string) ([]book.Book, error)
 	GetBooksByAuthorID(id int64) ([]book.Book, error)
+	GetBooksBySeriesID(id int64) ([]book.Book, error)
 	GetBookByID(id int64) (*book.Book, error)
 	GetRecentBooks(limit, offset int) ([]book.Book, int, error)
 	GetBooksByGenre(genre string, limit, offset int) ([]book.Book, int, error)

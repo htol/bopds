@@ -437,6 +437,133 @@ func TestBooksHandler_GroupsDuplicates(t *testing.T) {
 	}
 }
 
+func TestGetBooksBySeriesHandler(t *testing.T) {
+	storage := repo.GetStorage(":memory:")
+	defer func() {
+		if err := storage.Close(); err != nil {
+			t.Logf("Error closing storage: %v", err)
+		}
+	}()
+
+	for _, lib := range []struct{ name, display string }{
+		{"libA", "Library A"},
+		{"libB", ""},
+	} {
+		if _, err := storage.GetOrCreateLibrary(lib.name, lib.display); err != nil {
+			t.Fatalf("GetOrCreateLibrary failed: %v", err)
+		}
+	}
+
+	var seriesID int64
+	resolveSeriesID := func() {
+		t.Helper()
+		if seriesID != 0 {
+			return
+		}
+		all, err := storage.GetSeries()
+		if err != nil {
+			t.Fatalf("GetSeries failed: %v", err)
+		}
+		for _, s := range all {
+			if s.Name == "API Saga" {
+				seriesID = s.ID
+				return
+			}
+		}
+		t.Fatal("Series 'API Saga' not found")
+	}
+	add := func(library, title, filename string, seriesNo int) {
+		t.Helper()
+		b := &book.Book{
+			Library:  library,
+			Title:    title,
+			Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+			Lang:     "en",
+			Archive:  "books.zip",
+			FileName: filename,
+			Series:   &book.SeriesInfo{ID: seriesID, Name: "API Saga", SeriesNo: seriesNo},
+		}
+		if err := storage.Add(b); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+		resolveSeriesID()
+	}
+	// Insert out of order; duplicates of "Alpha" in two libraries merge into one entry
+	add("libA", "Beta Volume", "2.fb2", 2)
+	add("libA", "Alpha Volume", "1a.fb2", 1)
+	add("libB", "Alpha Volume", "1b.fb2", 1)
+
+	handler := NewHandler(service.New(storage), "")
+
+	t.Run("success grouped and ordered", func(t *testing.T) {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/api/series/%d/books", seriesID), nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var groups []map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&groups); err != nil {
+			t.Fatalf("Failed to decode JSON response: %v", err)
+		}
+		if len(groups) != 2 {
+			t.Fatalf("Expected 2 grouped entries, got %d", len(groups))
+		}
+		if groups[0]["title"] != "Alpha Volume" || groups[1]["title"] != "Beta Volume" {
+			t.Errorf("Expected series-number order, got [%v, %v]", groups[0]["title"], groups[1]["title"])
+		}
+
+		copies, ok := groups[0]["copies"].([]interface{})
+		if !ok || len(copies) != 2 {
+			t.Fatalf("Expected 2 copies for the cross-library duplicate, got %v", groups[0]["copies"])
+		}
+		libraries := map[string]bool{}
+		for _, c := range copies {
+			copyMap, _ := c.(map[string]interface{})
+			libraries[copyMap["library"].(string)] = true
+		}
+		if !libraries["libA"] || !libraries["libB"] {
+			t.Errorf("Expected copies in libA and libB, got %v", libraries)
+		}
+
+		series, _ := groups[0]["series"].(map[string]interface{})
+		if series == nil || series["name"] != "API Saga" || int64(series["series_id"].(float64)) != seriesID {
+			t.Errorf("Expected series info with ID %d, got %v", seriesID, series)
+		}
+
+		authors, _ := groups[0]["authors"].([]interface{})
+		if len(authors) != 1 {
+			t.Fatalf("Expected 1 author, got %v", authors)
+		}
+		author, _ := authors[0].(map[string]interface{})
+		if id, _ := author["ID"].(float64); id == 0 {
+			t.Errorf("Expected non-zero author ID in grouped response, got %v", author)
+		}
+	})
+
+	t.Run("malformed ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/series/abc/books", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("unknown series", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/series/999999/books", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("Expected status 404, got %d", w.Code)
+		}
+	})
+}
+
 func TestOpdsFeed_LibraryName(t *testing.T) {
 	storage := repo.GetStorage(":memory:")
 	defer func() {

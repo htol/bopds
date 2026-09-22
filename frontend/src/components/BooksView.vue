@@ -39,6 +39,8 @@
         :key="index"
         :book="group"
         @download="handleDownload"
+        @author-click="emit('author-click', $event)"
+        @series-click="emit('series-click', $event)"
       />
     </div>
 
@@ -66,6 +68,8 @@ import UniversalBookCard from '@/components/domain/UniversalBookCard.vue'
 import EmptyState from '@/components/domain/EmptyState.vue'
 import BaseLoader from '@/components/base/BaseLoader.vue'
 import { api, downloadBook } from '@/api'
+
+const emit = defineEmits(['author-click', 'series-click'])
 
 // Same alphabet as the OPDS authors index (api/opds.go)
 const letters = Array.from('АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯABCDEFGHIJKLMNOPQRSTUVWXYZ')

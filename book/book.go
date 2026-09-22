@@ -80,10 +80,12 @@ type BookSearchResult struct {
 	BookID     int64    `json:"book_id"`
 	Title      string   `json:"title"`
 	Author     string   `json:"author"`
+	AuthorIDs  []int64  `json:"author_ids"` // numeric IDs of the authors, aligned with Author's name order
 	Lang       string   `json:"lang,omitempty"`
 	Archive    string   `json:"archive,omitempty"`
 	FileName   string   `json:"filename,omitempty"`
 	Rank       float64  `json:"rank"` // FTS5 relevance score (higher = more relevant)
+	SeriesID   int64    `json:"series_id,omitempty"` // 0 = no series
 	SeriesName string   `json:"series_name,omitempty"`
 	SeriesNo   int      `json:"series_no,omitempty"`
 	Genres     []string `json:"genres,omitempty"`

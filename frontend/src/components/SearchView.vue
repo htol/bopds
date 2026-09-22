@@ -66,6 +66,8 @@
         :search-query="searchQuery"
         @download="handleDownload"
         @click="handleResultClick"
+        @author-click="emit('author-click', $event)"
+        @series-click="emit('series-click', $event)"
       />
 
       <!-- Empty State - No Results -->
@@ -116,6 +118,8 @@ const props = defineProps({
     default: ''
   }
 })
+
+const emit = defineEmits(['author-click', 'series-click'])
 
 // State
 const searchQuery = ref('')

@@ -256,7 +256,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
-			   a.first_name, a.middle_name, a.last_name,
+			   a.author_id, a.first_name, a.middle_name, a.last_name,
 			   s.series_id, s.name, bs.series_no,
 			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
@@ -279,6 +279,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 	for rows.Next() {
 		var b book.Book
 		var author book.Author
+		var authorID sql.NullInt64
 		var firstName, middleName, lastName sql.NullString
 		var deleted bool
 		var libRate sql.NullInt64
@@ -290,7 +291,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
-			&firstName, &middleName, &lastName,
+			&authorID, &firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
 			&libraryName, &libraryDisplayName,
 		); err != nil {
@@ -325,6 +326,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 			}
 
 			if isNewAuthor && (firstName.Valid || middleName.Valid || lastName.Valid) {
+				author.ID = authorID.Int64
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
 				author.LastName = lastName.String
@@ -337,6 +339,7 @@ func (r *Repo) GetBooksByLetter(letters string) ([]book.Book, error) {
 			}
 		} else {
 			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.ID = authorID.Int64
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
 				author.LastName = lastName.String
@@ -367,7 +370,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
-			   a.first_name, a.middle_name, a.last_name,
+			   a.author_id, a.first_name, a.middle_name, a.last_name,
 			   s.series_id, s.name, bs.series_no,
 			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
@@ -390,6 +393,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	for rows.Next() {
 		var b book.Book
 		var author book.Author
+		var authorID sql.NullInt64
 		var firstName, middleName, lastName sql.NullString
 		var deleted bool
 		var libRate sql.NullInt64
@@ -401,7 +405,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
-			&firstName, &middleName, &lastName,
+			&authorID, &firstName, &middleName, &lastName,
 			&seriesID, &seriesName, &seriesNo,
 			&libraryName, &libraryDisplayName,
 		); err != nil {
@@ -436,6 +440,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 			}
 
 			if isNewAuthor && (firstName.Valid || middleName.Valid || lastName.Valid) {
+				author.ID = authorID.Int64
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
 				author.LastName = lastName.String
@@ -449,6 +454,7 @@ func (r *Repo) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 
 		} else {
 			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.ID = authorID.Int64
 				author.FirstName = firstName.String
 				author.MiddleName = middleName.String
 				author.LastName = lastName.String
@@ -910,38 +916,64 @@ func (r *Repo) GetSeries() ([]book.SeriesInfo, error) {
 	return series, nil
 }
 
-// GetBooksBySeriesID books by series
-func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
+// GetBooksBySeriesID returns all non-deleted books of a series ordered by
+// series number, then title. It mirrors GetBooksByAuthorID (multi-author
+// dedup via booksMap) but preserves the SQL order instead of re-sorting.
+// An ID that matches no series row returns ErrNotFound.
+func (r *Repo) GetBooksBySeriesID(id int64) ([]book.Book, error) {
+	var name string
+	err := r.db.QueryRow(`SELECT name FROM series WHERE series_id = ?`, id).Scan(&name)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get series by ID %d: %w", id, err)
+	}
+
 	QUERY := `
 		SELECT b.book_id, b.title, b.lang, b.archive, b.filename,
 			   b.file_size, b.date_added, b.lib_id, b.deleted, b.lib_rate,
+			   a.author_id, a.first_name, a.middle_name, a.last_name,
+			   s.series_id, s.name, bs.series_no,
 			   l.name, COALESCE(l.display_name, l.name)
 		FROM books b
 		JOIN book_series bs ON b.book_id = bs.book_id
+		LEFT JOIN series s ON bs.series_id = s.series_id
+		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
+		LEFT JOIN authors a ON ba.author_id = a.author_id
 		LEFT JOIN libraries l ON b.library_id = l.library_id
 		WHERE bs.series_id = ? AND b.deleted = 0
 		ORDER BY bs.series_no, b.title
 	`
 
-	rows, err := r.db.Query(QUERY, seriesID)
+	rows, err := r.db.Query(QUERY, id)
 	if err != nil {
-		return nil, fmt.Errorf("query books by series: %w", err)
+		return nil, fmt.Errorf("query books by series id: %w", err)
 	}
 	defer rows.Close()
 
-	books := make([]book.Book, 0)
+	booksMap := make(map[int64]*book.Book)
+	bookOrder := make([]int64, 0)
 	for rows.Next() {
 		var b book.Book
+		var author book.Author
+		var authorID sql.NullInt64
+		var firstName, middleName, lastName sql.NullString
 		var deleted bool
 		var libRate sql.NullInt64
+		var seriesID sql.NullInt64
+		var seriesName sql.NullString
+		var seriesNo sql.NullInt64
 		var libraryName, libraryDisplayName sql.NullString
 
 		if err := rows.Scan(
 			&b.BookID, &b.Title, &b.Lang, &b.Archive, &b.FileName,
 			&b.FileSize, &b.DateAdded, &b.LibID, &deleted, &libRate,
+			&authorID, &firstName, &middleName, &lastName,
+			&seriesID, &seriesName, &seriesNo,
 			&libraryName, &libraryDisplayName,
 		); err != nil {
-			return nil, fmt.Errorf("scan book: %w", err)
+			return nil, fmt.Errorf("scan book by series id: %w", err)
 		}
 
 		b.Deleted = deleted
@@ -951,10 +983,61 @@ func (r *Repo) GetBooksBySeriesID(seriesID int64) ([]book.Book, error) {
 		b.Library = libraryName.String
 		b.LibraryDisplayName = libraryDisplayName.String
 
-		books = append(books, b)
+		var seriesInfo *book.SeriesInfo
+		if seriesName.Valid {
+			seriesInfo = &book.SeriesInfo{
+				ID:       seriesID.Int64,
+				Name:     seriesName.String,
+				SeriesNo: int(seriesNo.Int64),
+			}
+		}
+
+		if existingBook, ok := booksMap[b.BookID]; ok {
+			// Check if author is new (avoid duplicates if multiple series rows caused duplication)
+			isNewAuthor := true
+			for _, a := range existingBook.Author {
+				if a.FirstName == firstName.String && a.LastName == lastName.String {
+					isNewAuthor = false
+					break
+				}
+			}
+
+			if isNewAuthor && (firstName.Valid || middleName.Valid || lastName.Valid) {
+				author.ID = authorID.Int64
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				existingBook.Author = append(existingBook.Author, author)
+			}
+
+			// If series is missing, add it
+			if existingBook.Series == nil && seriesInfo != nil {
+				existingBook.Series = seriesInfo
+			}
+		} else {
+			if firstName.Valid || middleName.Valid || lastName.Valid {
+				author.ID = authorID.Int64
+				author.FirstName = firstName.String
+				author.MiddleName = middleName.String
+				author.LastName = lastName.String
+				b.Author = []book.Author{author}
+			}
+			if seriesInfo != nil {
+				b.Series = seriesInfo
+			}
+			booksMap[b.BookID] = &b
+			bookOrder = append(bookOrder, b.BookID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books by series id: %w", err)
 	}
 
-	sortBooks(books)
+	// Preserve SQL order (series number, then title)
+	books := make([]book.Book, 0, len(bookOrder))
+	for _, id := range bookOrder {
+		books = append(books, *booksMap[id])
+	}
 
 	return books, nil
 }

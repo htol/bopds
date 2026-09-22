@@ -159,6 +159,102 @@ func TestGetBooksByAuthorID_IncludesSeries(t *testing.T) {
 	}
 }
 
+func TestGetBooksBySeriesID(t *testing.T) {
+	dbPath := "./test_series_books.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	if _, err := db.GetOrCreateLibrary("libA", "Library A"); err != nil {
+		t.Fatalf("GetOrCreateLibrary failed: %v", err)
+	}
+
+	makeBook := func(title, filename string, seriesNo int) *book.Book {
+		return &book.Book{
+			Library:  "libA",
+			Title:    title,
+			Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+			Lang:     "en",
+			Archive:  "books.zip",
+			FileName: filename,
+			Series:   &book.SeriesInfo{Name: "Ring Saga", SeriesNo: seriesNo},
+		}
+	}
+	// Insert out of order: series_no ordering must come from the query, not insertion
+	for _, b := range []*book.Book{
+		makeBook("Second Volume", "2.fb2", 2),
+		makeBook("First Volume", "1.fb2", 1),
+	} {
+		if err := db.Add(b); err != nil {
+			t.Fatalf("Failed to add book %q: %v", b.Title, err)
+		}
+	}
+	// A book outside the series, same author
+	plain := &book.Book{
+		Library:  "libA",
+		Title:    "Standalone",
+		Author:   []book.Author{{FirstName: "John", LastName: "Doe"}},
+		Lang:     "en",
+		Archive:  "books.zip",
+		FileName: "3.fb2",
+	}
+	if err := db.Add(plain); err != nil {
+		t.Fatalf("Failed to add book %q: %v", plain.Title, err)
+	}
+
+	var seriesID int64
+	if err := db.db.QueryRow(`SELECT series_id FROM series WHERE name = ?`, "Ring Saga").Scan(&seriesID); err != nil {
+		t.Fatalf("Failed to look up series ID: %v", err)
+	}
+
+	// Found: ordered by series number, with author and series populated
+	books, err := db.GetBooksBySeriesID(seriesID)
+	if err != nil {
+		t.Fatalf("GetBooksBySeriesID failed: %v", err)
+	}
+	if len(books) != 2 {
+		t.Fatalf("Expected 2 books, got %d", len(books))
+	}
+	if books[0].Title != "First Volume" || books[1].Title != "Second Volume" {
+		t.Errorf("Expected series-number order, got [%q, %q]", books[0].Title, books[1].Title)
+	}
+	for _, b := range books {
+		if len(b.Author) != 1 || b.Author[0].ID == 0 {
+			t.Errorf("Expected author with a non-zero ID on %q, got %+v", b.Title, b.Author)
+		}
+		if b.Series == nil || b.Series.ID != seriesID || b.Series.Name != "Ring Saga" {
+			t.Errorf("Expected series info on %q, got %+v", b.Title, b.Series)
+		}
+		if b.Library != "libA" || b.LibraryDisplayName != "Library A" {
+			t.Errorf("Expected library fields on %q, got %q/%q", b.Title, b.Library, b.LibraryDisplayName)
+		}
+	}
+
+	// Empty series: a series row with no books returns no books, no error
+	var emptyID int64
+	if _, err := db.db.Exec(`INSERT INTO series (name) VALUES ('Empty Saga')`); err != nil {
+		t.Fatalf("Failed to insert empty series: %v", err)
+	}
+	if err := db.db.QueryRow(`SELECT series_id FROM series WHERE name = ?`, "Empty Saga").Scan(&emptyID); err != nil {
+		t.Fatalf("Failed to look up empty series ID: %v", err)
+	}
+	books, err = db.GetBooksBySeriesID(emptyID)
+	if err != nil {
+		t.Fatalf("GetBooksBySeriesID(empty series) failed: %v", err)
+	}
+	if len(books) != 0 {
+		t.Errorf("Expected 0 books for an empty series, got %d", len(books))
+	}
+
+	// Unknown ID
+	if _, err := db.GetBooksBySeriesID(999999); err != ErrNotFound {
+		t.Errorf("Expected ErrNotFound for an unknown series ID, got %v", err)
+	}
+}
+
 func TestGetAuthorsByLetter_FiltersDeletedBooks(t *testing.T) {
 	dbPath := "./test_author_visibility.db"
 	cleanupTestDB(dbPath)

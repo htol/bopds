@@ -6,7 +6,7 @@
         <button
           v-for="tab in tabs"
           :key="tab"
-          @click="activeTab = tab"
+          @click="selectTab(tab)"
           :class="tabClasses(tab)"
           class="relative px-6 py-3 font-display font-medium text-base transition-all duration-200"
         >
@@ -21,11 +21,35 @@
       </div>
     </nav>
 
-    <!-- Content -->
-    <SearchView v-if="activeTab === 'Поиск'" :initial-query="pendingSearch" />
-    <BooksView v-if="activeTab === 'Книги'" />
-    <AuthorsView v-if="activeTab === 'Авторы'" />
-    <GenresView v-if="activeTab === 'Жанры'" @select-genre="handleSelectGenre" />
+    <!-- Content: the series view replaces the tab content until closed -->
+    <SeriesView
+      v-if="activeSeries"
+      :series="activeSeries"
+      @back="closeSeriesView"
+      @author-click="handleAuthorClick"
+      @series-click="handleSeriesClick"
+    />
+    <SearchView
+      v-else-if="activeTab === 'Поиск'"
+      :initial-query="pendingSearch"
+      @author-click="handleAuthorClick"
+      @series-click="handleSeriesClick"
+    />
+    <BooksView
+      v-else-if="activeTab === 'Книги'"
+      @author-click="handleAuthorClick"
+      @series-click="handleSeriesClick"
+    />
+    <AuthorsView
+      v-else-if="activeTab === 'Авторы'"
+      :initial-author-id="pendingAuthorId"
+      @author-click="handleAuthorClick"
+      @series-click="handleSeriesClick"
+    />
+    <GenresView
+      v-else-if="activeTab === 'Жанры'"
+      @select-genre="handleSelectGenre"
+    />
   </div>
 </template>
 
@@ -36,14 +60,40 @@ import SearchView from '@/components/SearchView.vue'
 import BooksView from '@/components/BooksView.vue'
 import AuthorsView from '@/components/AuthorsView.vue'
 import GenresView from '@/components/GenresView.vue'
+import SeriesView from '@/components/SeriesView.vue'
 
 const tabs = ['Поиск', 'Книги', 'Авторы', 'Жанры']
 const activeTab = ref('Поиск')
 const pendingSearch = ref('')
+const pendingAuthorId = ref(null)
+const activeSeries = ref(null) // { id, name } while the series view is open
+
+const selectTab = (tab) => {
+  activeSeries.value = null
+  activeTab.value = tab
+}
 
 const handleSelectGenre = (genre) => {
   pendingSearch.value = genre
+  activeSeries.value = null
   activeTab.value = 'Поиск'
+}
+
+// Author click: open the author's book list in the Authors tab detail view
+const handleAuthorClick = ({ id }) => {
+  pendingAuthorId.value = id
+  activeSeries.value = null
+  activeTab.value = 'Авторы'
+}
+
+// Series click: show the series view in place of the tab content
+const handleSeriesClick = (series) => {
+  activeSeries.value = series
+}
+
+// Back from the series view: return to the previously active tab
+const closeSeriesView = () => {
+  activeSeries.value = null
 }
 
 const tabClasses = (tab) => {
@@ -73,12 +123,17 @@ watch(activeTab, (newTab) => {
   if (newTab !== 'Поиск') {
     pendingSearch.value = ''
   }
+  // The pending author id is consumed by AuthorsView on arrival
+  if (newTab !== 'Авторы') {
+    pendingAuthorId.value = null
+  }
 })
 
 // Handle browser back button
 const handlePopState = (event) => {
   const state = event.state
   if (state && state.tab) {
+    activeSeries.value = null
     activeTab.value = state.tab
   }
 }

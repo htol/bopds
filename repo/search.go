@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/htol/bopds/book"
@@ -67,6 +68,16 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 
 	// Search FTS5 table and join back to books table for full details
 	// Uses book_id column for direct, accurate mapping
+	//
+	// Authors come from a pre-aggregated derived table: one row per book with
+	// "id<char(31)>name" entries joined by char(30). A single aggregate
+	// guarantees the IDs and the names share one order (two separate
+	// group_concat calls have no guaranteed shared order, and the bundled
+	// SQLite cannot pin it: no ORDER BY inside DISTINCT aggregates, no
+	// multi-argument DISTINCT). The inner DISTINCT collapses duplicate
+	// book-author pairs (book_authors has no unique constraint). The derived
+	// table also removes the author rows from the genre-join multiplication
+	// the old DISTINCT guarded against.
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`
 		SELECT
@@ -79,15 +90,29 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 			b.deleted,
 			s.name as series_name,
 			bs.series_no,
+			bs.series_id,
 			fts.rank,
-			group_concat(distinct a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')) as author,
+			aa.author_combined as author,
 			group_concat(distinct g.display_name) as genres,
 			l.name as library,
 			COALESCE(l.display_name, l.name) as library_display_name
 		FROM books_fts fts
 		JOIN books b ON fts.book_id = b.book_id
-		LEFT JOIN book_authors ba ON b.book_id = ba.book_id
-		LEFT JOIN authors a ON ba.author_id = a.author_id
+		LEFT JOIN (
+			SELECT book_id,
+				   group_concat(author_id || char(31) || author_name, char(30))
+					 AS author_combined
+			FROM (
+				-- One row per book-author pair: book_authors has no unique
+				-- constraint, so duplicate pairs (same author listed twice)
+				-- must collapse here to keep one entry per author
+				SELECT DISTINCT ba.book_id, ba.author_id,
+						a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '') AS author_name
+				FROM book_authors ba
+				JOIN authors a ON ba.author_id = a.author_id
+			)
+			GROUP BY book_id
+		) aa ON aa.book_id = b.book_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
 		LEFT JOIN book_genres bg ON b.book_id = bg.book_id
@@ -115,9 +140,11 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 	queryBuilder.WriteString(" ")
 	queryBuilder.WriteString(langCondition)
 
+	// Sort by the author names: strip the "id<char(31)>" prefix so the order
+	// matches the plain name string the query used to sort by.
 	queryBuilder.WriteString(`
-		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, fts.rank, l.name, COALESCE(l.display_name, l.name)
-		ORDER BY author, s.name, bs.series_no, b.title COLLATE NOCASE
+		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, bs.series_id, fts.rank, aa.author_combined, l.name, COALESCE(l.display_name, l.name)
+		ORDER BY substr(aa.author_combined, instr(aa.author_combined, char(31)) + 1), s.name, bs.series_no, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
 	`)
 
@@ -134,13 +161,14 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		var r book.BookSearchResult
 		var seriesName sql.NullString
 		var seriesNo sql.NullInt64
+		var seriesID sql.NullInt64
 		var genresStr sql.NullString
 		var authorStr sql.NullString
 		var libraryName, libraryDisplayName sql.NullString
 
 		err := rows.Scan(
 			&r.BookID, &r.Title, &r.Lang, &r.Archive, &r.FileName,
-			&r.FileSize, &r.Deleted, &seriesName, &seriesNo,
+			&r.FileSize, &r.Deleted, &seriesName, &seriesNo, &seriesID,
 			&r.Rank, &authorStr, &genresStr, &libraryName, &libraryDisplayName,
 		)
 		if err != nil {
@@ -148,13 +176,16 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 		}
 
 		if authorStr.Valid {
-			r.Author = authorStr.String
+			r.Author, r.AuthorIDs = splitAuthorCombined(authorStr.String)
 		}
 		if seriesName.Valid {
 			r.SeriesName = seriesName.String
 		}
 		if seriesNo.Valid {
 			r.SeriesNo = int(seriesNo.Int64)
+		}
+		if seriesID.Valid {
+			r.SeriesID = seriesID.Int64
 		}
 		if genresStr.Valid {
 			r.Genres = strings.Split(genresStr.String, ",")
@@ -169,6 +200,31 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 	}
 
 	return results, nil
+}
+
+// splitAuthorCombined decodes the pre-aggregated author string produced by
+// the SearchBooks derived table: "id<char(31)>name" entries joined by
+// char(30). It returns the visible author string (names joined with ",",
+// byte-identical to the plain group_concat the query used to produce) and the
+// author IDs in the same order. Entries without the separator or with a
+// non-numeric ID cannot be produced by the writer and are skipped.
+func splitAuthorCombined(combined string) (string, []int64) {
+	entries := strings.Split(combined, "\x1e") // char(30)
+	ids := make([]int64, 0, len(entries))
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		sep := strings.Index(entry, "\x1f") // char(31)
+		if sep < 0 {
+			continue
+		}
+		id, err := strconv.ParseInt(entry[:sep], 10, 64)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+		names = append(names, entry[sep+1:])
+	}
+	return strings.Join(names, ","), ids
 }
 
 // RebuildFTSIndex rebuilds the full-text search index for all books

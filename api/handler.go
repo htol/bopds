@@ -29,6 +29,7 @@ func NewHandler(svc *service.Service, urlPrefix string) http.Handler {
 	mux.Handle("/api/authors/", withCORS(authorsAPIHandler(svc)))
 	mux.Handle("/api/books", withCORS(getBooksByLetterHandler(svc)))
 	mux.Handle("/api/books/", withCORS(downloadBookHandler(svc)))
+	mux.Handle("GET /api/series/{id}/books", withCORS(getBooksBySeriesHandler(svc)))
 	mux.Handle("/api/genres", withCORS(getGenresHandler(svc)))
 	mux.Handle("/api/languages", withCORS(getLanguagesHandler(svc)))
 	mux.Handle("/api/search", withCORS(searchBooksHandler(svc)))

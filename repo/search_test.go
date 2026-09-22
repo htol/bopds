@@ -2,7 +2,9 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/xml"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +76,160 @@ func TestSearchBooks_NewFields(t *testing.T) {
 	}
 	if res.Deleted {
 		t.Error("Expected Deleted to be false")
+	}
+}
+
+func TestSearchBooks_AuthorIDsAndSeriesID(t *testing.T) {
+	dbPath := "./test_search_ids.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	// Book with two authors and a series
+	b1 := &book.Book{
+		Title: "Dual Writer Saga",
+		Author: []book.Author{
+			{FirstName: "Alan", LastName: "Alpha"},
+			{FirstName: "Beth", LastName: "Beta"},
+		},
+		Lang:     "en",
+		Archive:  "books.zip",
+		FileName: "saga.fb2",
+		Series: &book.SeriesInfo{
+			Name:     "Grand Cycle",
+			SeriesNo: 2,
+		},
+	}
+	// Book with one author and no series
+	b2 := &book.Book{
+		Title:    "Lone Wolf Tale",
+		Author:   []book.Author{{FirstName: "Carl", LastName: "Gamma"}},
+		Lang:     "en",
+		Archive:  "books.zip",
+		FileName: "lone.fb2",
+	}
+	for _, b := range []*book.Book{b1, b2} {
+		if err := db.Add(b); err != nil {
+			t.Fatalf("Failed to add book %q: %v", b.Title, err)
+		}
+	}
+	if err := db.RebuildFTSIndex(); err != nil {
+		t.Fatalf("Failed to rebuild FTS index: %v", err)
+	}
+
+	// Map author ID -> the name as the SQL concat renders it, for alignment checks
+	idToName := make(map[int64]string)
+	rows, err := db.db.Query(`
+		SELECT a.author_id, a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')
+		FROM authors a
+	`)
+	if err != nil {
+		t.Fatalf("Failed to query authors: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			t.Fatalf("Failed to scan author: %v", err)
+		}
+		idToName[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Failed to iterate authors: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Multi-author book with a series: author_ids aligns with the names in
+	// the author string, series_id is the book's series
+	results, err := db.SearchBooks(ctx, "Saga", 10, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchBooks failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+
+	if len(res.AuthorIDs) != 2 {
+		t.Fatalf("Expected 2 author IDs, got %d (%v)", len(res.AuthorIDs), res.AuthorIDs)
+	}
+	// The visible author string stays byte-identical to the old plain
+	// group_concat: names (with the concat's trailing space) joined by ","
+	segments := strings.Split(res.Author, ",")
+	if len(segments) != 2 {
+		t.Fatalf("Expected 2 author segments in %q", res.Author)
+	}
+	for i, id := range res.AuthorIDs {
+		want, ok := idToName[id]
+		if !ok {
+		t.Fatalf("author_ids[%d]=%d not present in authors table", i, id)
+		}
+		if segments[i] != want {
+			t.Errorf("author_ids[%d]=%d maps to %q, but author segment %d is %q", i, id, want, i, segments[i])
+		}
+	}
+	if res.AuthorIDs[0] == res.AuthorIDs[1] {
+		t.Errorf("Expected distinct author IDs, got %v", res.AuthorIDs)
+	}
+
+	var seriesID int64
+	if err := db.db.QueryRow(`SELECT series_id FROM series WHERE name = ?`, "Grand Cycle").Scan(&seriesID); err != nil {
+		t.Fatalf("Failed to look up series ID: %v", err)
+	}
+	if res.SeriesID != seriesID {
+		t.Errorf("SeriesID = %d, want %d", res.SeriesID, seriesID)
+	}
+
+	// No-series book: series_id stays empty (0, omitted in JSON)
+	results, err = db.SearchBooks(ctx, "Lone", 10, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchBooks failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	res = results[0]
+	if res.SeriesID != 0 {
+		t.Errorf("SeriesID = %d, want 0 for a book without a series", res.SeriesID)
+	}
+	if len(res.AuthorIDs) != 1 {
+		t.Fatalf("Expected 1 author ID, got %d (%v)", len(res.AuthorIDs), res.AuthorIDs)
+	}
+	if segments := strings.Split(res.Author, ","); len(segments) != 1 || segments[0] != idToName[res.AuthorIDs[0]] {
+		t.Errorf("Author = %q does not align with author_ids %v", res.Author, res.AuthorIDs)
+	}
+
+	// The field is omitted from JSON when there is no series
+	encoded, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("Failed to marshal result: %v", err)
+	}
+	if strings.Contains(string(encoded), "series_id") {
+		t.Errorf("Expected no series_id in JSON for a book without a series, got %s", encoded)
+	}
+
+	// Duplicate book-author pairs (book_authors has no unique constraint;
+	// scans may insert the same pair twice) collapse to one author entry
+	if _, err := db.db.Exec(`INSERT INTO book_authors (book_id, author_id)
+		SELECT b.book_id, a.author_id FROM books b, authors a
+		WHERE b.title = 'Lone Wolf Tale' AND a.last_name = 'Gamma'`); err != nil {
+		t.Fatalf("Failed to duplicate book-author pair: %v", err)
+	}
+	results, err = db.SearchBooks(ctx, "Lone", 10, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchBooks failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	if len(results[0].AuthorIDs) != 1 || len(strings.Split(results[0].Author, ",")) != 1 {
+		t.Errorf("Expected the duplicated author pair to collapse to one entry, got author %q, ids %v",
+			results[0].Author, results[0].AuthorIDs)
 	}
 }
 

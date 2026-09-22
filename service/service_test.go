@@ -132,6 +132,13 @@ func (m *mockRepository) GetBooksByAuthorID(id int64) ([]book.Book, error) {
 	return []book.Book{}, nil
 }
 
+func (m *mockRepository) GetBooksBySeriesID(id int64) ([]book.Book, error) {
+	if m.booksError != nil {
+		return nil, m.booksError
+	}
+	return []book.Book{}, nil
+}
+
 func (m *mockRepository) GetBookByID(id int64) (*book.Book, error) {
 	if m.booksError != nil {
 		return nil, m.booksError
