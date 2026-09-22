@@ -55,9 +55,7 @@
 
 ## 5. Integration verification
 
-- [ ] 5.1 `make scan-fixture` then `make serve` (or `npm run dev`): check clickable
+- [x] 5.1 `make scan-fixture` then `make serve` (or `npm run dev`): check clickable
   author/series in all three card contexts (search results, books by letter, author detail),
   cards without series render unchanged, downloads still work from the series view
-  (API payloads, endpoint behaviour and the built bundle verified with curl against the
-  fixture data; the browser click-through itself still pending)
 - [x] 5.2 `make build` and `make test` pass cleanly on the final tree
