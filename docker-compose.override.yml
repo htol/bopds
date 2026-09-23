@@ -22,7 +22,7 @@ services:
       - "traefik.http.routers.bopds-bypass.service=bopds"
 
       - "traefik.http.routers.bopds.rule=Host(`${TRAEFIK_HOST}`) && PathPrefix(`${URL_PREFIX}`)"
-      - "traefik.http.routers.bopds.priority=10"
+      - "traefik.http.routers.bopds.priority=99"
       - "traefik.http.routers.bopds.entrypoints=websecure"
       - "traefik.http.routers.bopds.tls.certresolver=letsencrypt"
       - "traefik.http.routers.bopds.middlewares=lib-slash,auth-chain@file"
