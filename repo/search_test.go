@@ -233,6 +233,113 @@ func TestSearchBooks_AuthorIDsAndSeriesID(t *testing.T) {
 	}
 }
 
+func TestSearchBooks_DuplicateAuthorPairs(t *testing.T) {
+	dbPath := "./test_search_dup.db"
+	cleanupTestDB(dbPath)
+	db := GetStorage(dbPath)
+	defer func() {
+		db.Close()
+		cleanupTestDB(dbPath)
+	}()
+
+	// Book whose book-author pairs will be duplicated (book_authors has no
+	// unique constraint; the correlated DISTINCT in SearchBooks must collapse
+	// the copies — the case that motivated the pre-9eb41d2 aggregate shape)
+	b := &book.Book{
+		Title: "Duplicated Pairs Mystery",
+		Author: []book.Author{
+			{FirstName: "Dave", LastName: "Delta"},
+			{FirstName: "Eve", LastName: "Echo"},
+		},
+		Lang:     "en",
+		Archive:  "books.zip",
+		FileName: "dup.fb2",
+	}
+	if err := db.Add(b); err != nil {
+		t.Fatalf("Failed to add book: %v", err)
+	}
+	if err := db.RebuildFTSIndex(); err != nil {
+		t.Fatalf("Failed to rebuild FTS index: %v", err)
+	}
+
+	// Duplicate every book-author pair: once by copying the existing rows,
+	// once by re-deriving them from books x authors (2 pairs -> 6 rows)
+	if _, err := db.db.Exec(`INSERT INTO book_authors (book_id, author_id)
+		SELECT ba.book_id, ba.author_id FROM book_authors ba
+		JOIN books b ON ba.book_id = b.book_id
+		WHERE b.title = 'Duplicated Pairs Mystery'`); err != nil {
+		t.Fatalf("Failed to duplicate book-author pairs: %v", err)
+	}
+	if _, err := db.db.Exec(`INSERT INTO book_authors (book_id, author_id)
+		SELECT b.book_id, a.author_id FROM books b, authors a
+		WHERE b.title = 'Duplicated Pairs Mystery'`); err != nil {
+		t.Fatalf("Failed to duplicate book-author pairs: %v", err)
+	}
+	var pairCount int
+	if err := db.db.QueryRow(`SELECT count(*) FROM book_authors ba
+		JOIN books b ON ba.book_id = b.book_id
+		WHERE b.title = 'Duplicated Pairs Mystery'`).Scan(&pairCount); err != nil {
+		t.Fatalf("Failed to count pairs: %v", err)
+	}
+	if pairCount != 6 {
+		t.Fatalf("Expected 6 book_authors rows (2 pairs x 3), got %d", pairCount)
+	}
+
+	// Map author ID -> the name as the SQL concat renders it
+	idToName := make(map[int64]string)
+	rows, err := db.db.Query(`
+		SELECT a.author_id, a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '')
+		FROM authors a
+	`)
+	if err != nil {
+		t.Fatalf("Failed to query authors: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			t.Fatalf("Failed to scan author: %v", err)
+		}
+		idToName[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Failed to iterate authors: %v", err)
+	}
+
+	results, err := db.SearchBooks(context.Background(), "Duplicated", 10, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchBooks failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+
+	// Duplicates collapse to exactly one entry per author
+	if len(res.AuthorIDs) != 2 {
+		t.Fatalf("Expected 2 author IDs, got %d (%v)", len(res.AuthorIDs), res.AuthorIDs)
+	}
+	if res.AuthorIDs[0] == res.AuthorIDs[1] {
+		t.Errorf("Expected distinct author IDs, got %v", res.AuthorIDs)
+	}
+
+	// author_ids align with the visible author names
+	segments := strings.Split(res.Author, ",")
+	if len(segments) != 2 {
+		t.Fatalf("Expected 2 author segments in %q", res.Author)
+	}
+	for i, id := range res.AuthorIDs {
+		want, ok := idToName[id]
+		if !ok {
+			t.Fatalf("author_ids[%d]=%d not present in authors table", i, id)
+		}
+		if segments[i] != want {
+			t.Errorf("author_ids[%d]=%d maps to %q, but author segment %d is %q", i, id, want, i, segments[i])
+		}
+	}
+}
+
 func TestSearchBooks_FieldFilters(t *testing.T) {
 	dbPath := "./test_search_filters.db"
 	cleanupTestDB(dbPath)

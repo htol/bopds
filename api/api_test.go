@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -602,5 +604,100 @@ func TestOpdsFeed_LibraryName(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "<dc:source>Library A</dc:source>") {
 		t.Errorf("Expected acquisition entry to carry library name in dc:source, got:\n%s", body)
+	}
+}
+
+// capturingHandler records every log entry the handler emits
+type capturingHandler struct {
+	records []slog.Record
+}
+
+func (h *capturingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *capturingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+
+func (h *capturingHandler) WithGroup(_ string) slog.Handler { return h }
+
+func TestSearchBooksHandler_ClientCanceled(t *testing.T) {
+	storage := repo.GetStorage(":memory:")
+	defer func() {
+		if err := storage.Close(); err != nil {
+			t.Logf("Error closing storage: %v", err)
+		}
+	}()
+	svc := service.New(storage)
+	handler := searchBooksHandler(svc)
+
+	// The client disconnects before the search starts
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/api/search?q=test", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	caps := &capturingHandler{}
+	prevLogger := logger.Logger
+	logger.Logger = slog.New(caps)
+	defer func() { logger.Logger = prevLogger }()
+
+	handler.ServeHTTP(w, req)
+
+	// No 500 response attempt: nothing was written
+	if w.Code == http.StatusInternalServerError {
+		t.Errorf("Expected no 500 for a canceled request, got %d", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("Expected empty body for a canceled request, got %q", w.Body.String())
+	}
+
+	// Cancellation is informational, never an ERROR
+	canceledAtInfo := false
+	for _, rec := range caps.records {
+		if rec.Level == slog.LevelError {
+			t.Errorf("Expected no ERROR-level log for a canceled request, got %q", rec.Message)
+		}
+		if rec.Message == "client canceled search" && rec.Level == slog.LevelInfo {
+			canceledAtInfo = true
+		}
+	}
+	if !canceledAtInfo {
+		t.Errorf("Expected an Info-level 'client canceled search' entry, got %v", caps.records)
+	}
+}
+
+func TestSearchBooksHandler_DatabaseError(t *testing.T) {
+	storage := repo.GetStorage(":memory:")
+	if err := storage.Close(); err != nil {
+		t.Fatalf("Failed to close storage: %v", err)
+	}
+	svc := service.New(storage)
+	handler := searchBooksHandler(svc)
+
+	req := httptest.NewRequest("GET", "/api/search?q=test", nil)
+	w := httptest.NewRecorder()
+
+	caps := &capturingHandler{}
+	prevLogger := logger.Logger
+	logger.Logger = slog.New(caps)
+	defer func() { logger.Logger = prevLogger }()
+
+	handler.ServeHTTP(w, req)
+
+	// A genuine failure still surfaces as ERROR + 500
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status 500 for a database error, got %d", w.Code)
+	}
+	loggedError := false
+	for _, rec := range caps.records {
+		if rec.Level == slog.LevelError {
+			loggedError = true
+		}
+	}
+	if !loggedError {
+		t.Errorf("Expected an ERROR-level log entry for a database error")
 	}
 }

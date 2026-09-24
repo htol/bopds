@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -200,6 +201,13 @@ func searchBooksHandler(svc *service.Service) http.Handler {
 		// Perform search with context for cancellation
 		results, err := svc.SearchBooks(ctx, query, limit, offset, fields, languages)
 		if err != nil {
+			// A client that disconnected or aborted is not a server error:
+			// log it as an informational event and write nothing (the client
+			// is gone; if it is not, the connection is about to be).
+			if errors.Is(err, context.Canceled) {
+				logger.Info("client canceled search", "error", err)
+				return
+			}
 			respondWithError(w, "Failed to search books", err, http.StatusInternalServerError)
 			return
 		}
@@ -207,7 +215,8 @@ func searchBooksHandler(svc *service.Service) http.Handler {
 		// Return JSON response
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(results); err != nil {
-			logger.Error("Failed to encode search results", "error", err)
+			// Encode failures here are dead-socket writes: not actionable
+			logger.Debug("Failed to encode search results", "error", err)
 		}
 	})
 }

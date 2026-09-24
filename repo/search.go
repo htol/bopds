@@ -69,15 +69,16 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 	// Search FTS5 table and join back to books table for full details
 	// Uses book_id column for direct, accurate mapping
 	//
-	// Authors come from a pre-aggregated derived table: one row per book with
-	// "id<char(31)>name" entries joined by char(30). A single aggregate
-	// guarantees the IDs and the names share one order (two separate
-	// group_concat calls have no guaranteed shared order, and the bundled
-	// SQLite cannot pin it: no ORDER BY inside DISTINCT aggregates, no
-	// multi-argument DISTINCT). The inner DISTINCT collapses duplicate
-	// book-author pairs (book_authors has no unique constraint). The derived
-	// table also removes the author rows from the genre-join multiplication
-	// the old DISTINCT guarded against.
+	// Authors come from a correlated scalar subquery evaluated once per matched
+	// book (one I_book_id range scan per book, so the cost follows the match
+	// count, not the library size): "id<char(31)>name" entries joined by
+	// char(30). A single aggregate guarantees the IDs and the names share one
+	// order (two separate group_concat calls have no guaranteed shared order,
+	// and the bundled SQLite cannot pin it: no ORDER BY inside DISTINCT
+	// aggregates, no multi-argument DISTINCT). The inner DISTINCT collapses
+	// duplicate book-author pairs (book_authors has no unique constraint).
+	// The aggregate also removes the author rows from the genre-join
+	// multiplication the old DISTINCT guarded against.
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`
 		SELECT
@@ -92,27 +93,22 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 			bs.series_no,
 			bs.series_id,
 			fts.rank,
-			aa.author_combined as author,
+			(SELECT group_concat(author_id || char(31) || author_name, char(30))
+			 FROM (
+				-- One row per book-author pair: book_authors has no unique
+				-- constraint, so duplicate pairs (same author listed twice)
+				-- must collapse here to keep one entry per author
+				SELECT DISTINCT ba.author_id,
+						a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '') AS author_name
+				FROM book_authors ba
+				JOIN authors a ON ba.author_id = a.author_id
+				WHERE ba.book_id = b.book_id
+			)) as author_combined,
 			group_concat(distinct g.display_name) as genres,
 			l.name as library,
 			COALESCE(l.display_name, l.name) as library_display_name
 		FROM books_fts fts
 		JOIN books b ON fts.book_id = b.book_id
-		LEFT JOIN (
-			SELECT book_id,
-				   group_concat(author_id || char(31) || author_name, char(30))
-					 AS author_combined
-			FROM (
-				-- One row per book-author pair: book_authors has no unique
-				-- constraint, so duplicate pairs (same author listed twice)
-				-- must collapse here to keep one entry per author
-				SELECT DISTINCT ba.book_id, ba.author_id,
-						a.last_name || ' ' || a.first_name || ' ' || coalesce(a.middle_name, '') AS author_name
-				FROM book_authors ba
-				JOIN authors a ON ba.author_id = a.author_id
-			)
-			GROUP BY book_id
-		) aa ON aa.book_id = b.book_id
 		LEFT JOIN book_series bs ON b.book_id = bs.book_id
 		LEFT JOIN series s ON bs.series_id = s.series_id
 		LEFT JOIN book_genres bg ON b.book_id = bg.book_id
@@ -143,8 +139,8 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 	// Sort by the author names: strip the "id<char(31)>" prefix so the order
 	// matches the plain name string the query used to sort by.
 	queryBuilder.WriteString(`
-		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, bs.series_id, fts.rank, aa.author_combined, l.name, COALESCE(l.display_name, l.name)
-		ORDER BY substr(aa.author_combined, instr(aa.author_combined, char(31)) + 1), s.name, bs.series_no, b.title COLLATE NOCASE
+		GROUP BY b.book_id, b.title, b.lang, b.archive, b.filename, b.file_size, b.deleted, s.name, bs.series_no, bs.series_id, fts.rank, l.name, COALESCE(l.display_name, l.name)
+		ORDER BY substr(author_combined, instr(author_combined, char(31)) + 1), s.name, bs.series_no, b.title COLLATE NOCASE
 		LIMIT ? OFFSET ?
 	`)
 
@@ -203,7 +199,7 @@ func (r *Repo) SearchBooks(ctx context.Context, query string, limit, offset int,
 }
 
 // splitAuthorCombined decodes the pre-aggregated author string produced by
-// the SearchBooks derived table: "id<char(31)>name" entries joined by
+// the SearchBooks author subquery: "id<char(31)>name" entries joined by
 // char(30). It returns the visible author string (names joined with ",",
 // byte-identical to the plain group_concat the query used to produce) and the
 // author IDs in the same order. Entries without the separator or with a
